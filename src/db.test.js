@@ -9,6 +9,7 @@ import {
   getProducts,
   searchProducts,
   createProduct,
+  updateProduct,
   deleteProduct,
   createReceipt,
   cancelReceipt,
@@ -154,6 +155,33 @@ describe('createProduct', () => {
 
     const product = await createProduct({ cat: 'kava', name: 'Новий', price: 20, stock: 1 })
     expect(product.id).toBe(950_001)
+  })
+
+  it('трактує відсутню собівартість як 0, зберігає задану', async () => {
+    const withoutCost = await createProduct({ cat: 'kava', name: 'Латте', price: 60, stock: 5 })
+    expect(withoutCost.cost).toBe(0)
+
+    const withCost = await createProduct({ cat: 'kava', name: 'Раф', price: 70, stock: 3, cost: 25 })
+    expect(withCost.cost).toBe(25)
+  })
+})
+
+describe('updateProduct', () => {
+  it('оновлює назву, ціну, собівартість і залишок', async () => {
+    const updated = await updateProduct(1, { name: 'Еспресо подвійний', price: 55, cost: 22, stock: 12 })
+    expect(updated).toMatchObject({ name: 'Еспресо подвійний', price: 55, cost: 22, stock: 12 })
+
+    const fromDb = (await getProducts()).find(p => p.id === 1)
+    expect(fromDb).toMatchObject({ name: 'Еспресо подвійний', price: 55, cost: 22, stock: 12 })
+  })
+
+  it('трактує відсутню собівартість як 0', async () => {
+    const updated = await updateProduct(1, { name: 'Еспресо', price: 45, stock: 10 })
+    expect(updated.cost).toBe(0)
+  })
+
+  it('кидає помилку для неіснуючого товару', async () => {
+    await expect(updateProduct(9999, { name: 'X', price: 1, stock: 1 })).rejects.toThrow('не знайдено')
   })
 })
 

@@ -60,19 +60,19 @@ export async function searchProducts(query) {
   return all.filter(p => p.name.toLowerCase().includes(q))
 }
 
-export async function createProduct({ cat, name, price, stock }) {
+export async function createProduct({ cat, name, price, stock, cost = 0 }) {
   const all = await db().getAll('products')
   const manualIds = all.map(p => p.id).filter(id => id >= MANUAL_ID_START)
   const id = manualIds.length ? Math.max(...manualIds) + 1 : MANUAL_ID_START
-  const product = { id, cat, name, price, stock, updatedAt: Date.now() }
+  const product = { id, cat, name, price, cost, stock, updatedAt: Date.now() }
   await db().put('products', product)
   return product
 }
 
-export async function updateProduct(id, { name, price, stock }) {
+export async function updateProduct(id, { name, price, stock, cost = 0 }) {
   const product = await db().get('products', id)
   if (!product) throw new Error(`Товар ${id} не знайдено`)
-  const updated = { ...product, name, price, stock, updatedAt: Date.now() }
+  const updated = { ...product, name, price, cost, stock, updatedAt: Date.now() }
   await db().put('products', updated)
   return updated
 }

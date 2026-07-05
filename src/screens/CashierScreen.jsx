@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getCategories, getProducts } from '../db.js'
 
-export default function CashierScreen({ cart, setCart, onCheckout, onReceipts, onManage, onStats }) {
+export default function CashierScreen({ cart, setCart, onCheckout, onReceipts, onManage, onStats, onBackup }) {
   const [categories, setCategories] = useState([])
   const [catalog, setCatalog] = useState([])
   const [activeCat, setActiveCat] = useState(null)
@@ -63,9 +63,10 @@ export default function CashierScreen({ cart, setCart, onCheckout, onReceipts, o
         <header className="app-header">
           <h1>ГЕРКУЛЕС ШОП</h1>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-ghost" onClick={onManage}>Товари</button>
+            <button className="btn-ghost" onClick={onManage}>Облік товарів</button>
             <button className="btn-ghost" onClick={onReceipts}>Журнал</button>
             <button className="btn-ghost" onClick={onStats}>Статистика</button>
+            <button className="btn-ghost" onClick={onBackup}>Бекапи</button>
           </div>
         </header>
 

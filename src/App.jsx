@@ -6,6 +6,7 @@ import CheckoutScreen from './screens/CheckoutScreen.jsx'
 import ReceiptsScreen from './screens/ReceiptsScreen.jsx'
 import ManageCatalogScreen from './screens/ManageCatalogScreen.jsx'
 import StatsScreen from './screens/StatsScreen.jsx'
+import BackupScreen from './screens/BackupScreen.jsx'
 import './index.css'
 
 // Постійний шлях каталогу — основний і незмінний файл, читається автоматично
@@ -78,6 +79,9 @@ export default function App() {
       {screen === 'stats' && (
         <StatsScreen onBack={() => setScreen('cashier')} />
       )}
+      {screen === 'backup' && (
+        <BackupScreen onBack={() => setScreen('cashier')} />
+      )}
       {screen === 'cashier' && (
         <CashierScreen
           cart={cart}
@@ -86,6 +90,7 @@ export default function App() {
           onReceipts={() => setScreen('receipts')}
           onManage={() => setScreen('manage')}
           onStats={() => setScreen('stats')}
+          onBackup={() => setScreen('backup')}
         />
       )}
     </>
