@@ -1,0 +1,13 @@
+node_modules/
+dist/
+
+# Реальні дані магазину — не для git (див. install/README чи ЗАПУСК-ПРОЕКТУ.txt)
+WOO_BD/
+
+# OS/редактор
+.DS_Store
+Thumbs.db
+*.local
+
+# Локальні дозволи Claude Code (машино-специфічні, не для спільного коду)
+.claude/settings.local.json
