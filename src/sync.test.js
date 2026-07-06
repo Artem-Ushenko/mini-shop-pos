@@ -125,4 +125,17 @@ describe('importFromFile', () => {
   it('кидає помилку при невірному форматі', async () => {
     await expect(importFromFile('порожній файл без секцій')).rejects.toThrow('Невірний формат')
   })
+
+  it('не чіпає товари при повторному імпорті того самого вмісту catalog.csv (регрес: 0 → 20 після перезавантаження)', async () => {
+    db.getProducts.mockResolvedValue([
+      { id: 1, cat: 'protein', name: 'Whey 900г', price: 1250, cost: 850, stock: 0, updatedAt: Date.now() },
+    ])
+
+    await importFromFile(SAMPLE_CSV) // перший запуск — товар проданий до 0, файл не змінювався
+    db.putProduct.mockClear()
+
+    await importFromFile(SAMPLE_CSV) // друге перезавантаження, файл той самий
+
+    expect(db.putProduct).not.toHaveBeenCalled()
+  })
 })

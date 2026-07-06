@@ -5,6 +5,31 @@ function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
 }
 
+function fmtDate(ts) {
+  const d = new Date(ts)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function dayKey(ts) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+// Групує чеки (вже відсортовані від найновіших) за днем: "Сьогодні" окремо,
+// попередні дні — під заголовком з датою.
+function groupByDay(receipts) {
+  const todayKey = dayKey(Date.now())
+  const groups = []
+  for (const r of receipts) {
+    const key = dayKey(r.time)
+    const label = key === todayKey ? 'Сьогодні' : fmtDate(r.time)
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) last.items.push(r)
+    else groups.push({ key, label, items: [r] })
+  }
+  return groups
+}
+
 export default function ReceiptsScreen({ onBack }) {
   const [receipts, setReceipts] = useState([])
   const [dayTotal, setDayTotal] = useState({ sum: 0, count: 0 })
@@ -56,59 +81,62 @@ export default function ReceiptsScreen({ onBack }) {
         {error && <p className="error-msg">{error}</p>}
 
         {receipts.length === 0
-          ? <p className="empty-hint">Чеків за сьогодні немає</p>
-          : (
-            <ul className="receipts-list">
-              {receipts.map(r => (
-                <li key={r.no} className={`receipt-card card${r.cancelled ? ' cancelled' : ''}`}>
+          ? <p className="empty-hint">Чеків ще немає</p>
+          : groupByDay(receipts).map(group => (
+            <section key={group.key}>
+              <h3 className="receipts-day-header">{group.label}</h3>
+              <ul className="receipts-list">
+                {group.items.map(r => (
+                  <li key={r.no} className={`receipt-card card${r.cancelled ? ' cancelled' : ''}`}>
 
-                  <div className="receipt-head">
-                    <span className="receipt-no">Чек №{r.no}</span>
-                    <span className="receipt-time">{fmtTime(r.time)}</span>
-                    {r.cancelled && <span className="badge-cancelled">СТОРНО</span>}
-                  </div>
+                    <div className="receipt-head">
+                      <span className="receipt-no">Чек №{r.no}</span>
+                      <span className="receipt-time">{fmtDate(r.time)} {fmtTime(r.time)}</span>
+                      {r.cancelled && <span className="badge-cancelled">СТОРНО</span>}
+                    </div>
 
-                  <ul className="receipt-items">
-                    {r.items.map((item, i) => (
-                      <li key={i}>
-                        {item.name} × {item.qty} — {(item.price * item.qty).toLocaleString('uk-UA')} ₴
-                      </li>
-                    ))}
-                  </ul>
+                    <ul className="receipt-items">
+                      {r.items.map((item, i) => (
+                        <li key={i}>
+                          {item.name} × {item.qty} — {(item.price * item.qty).toLocaleString('uk-UA')} ₴
+                        </li>
+                      ))}
+                    </ul>
 
-                  <div className="receipt-foot">
-                    {r.discount > 0 && (
-                      <span className="discount-tag">Знижка {r.discount}%</span>
-                    )}
-                    <strong>{r.total.toLocaleString('uk-UA')} ₴</strong>
+                    <div className="receipt-foot">
+                      {r.discount > 0 && (
+                        <span className="discount-tag">Знижка {r.discount}%</span>
+                      )}
+                      <strong>{r.total.toLocaleString('uk-UA')} ₴</strong>
 
-                    {!r.cancelled && confirmingNo !== r.no && (
-                      <button
-                        className="btn-ghost-sm"
-                        style={{ color: 'var(--c-danger)' }}
-                        onClick={() => setConfirmingNo(r.no)}
-                      >
-                        Сторно
-                      </button>
-                    )}
-
-                    {!r.cancelled && confirmingNo === r.no && (
-                      <div className="cancel-confirm">
-                        <span>Скасувати чек №{r.no}?</span>
-                        <button className="btn-danger" style={{ minHeight: 36, padding: '6px 14px' }} onClick={() => handleCancel(r.no)}>
-                          Так
+                      {!r.cancelled && confirmingNo !== r.no && (
+                        <button
+                          className="btn-ghost-sm"
+                          style={{ color: 'var(--c-danger)' }}
+                          onClick={() => setConfirmingNo(r.no)}
+                        >
+                          Сторно
                         </button>
-                        <button className="btn-ghost-sm" onClick={() => setConfirmingNo(null)}>
-                          Ні
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      )}
 
-                </li>
-              ))}
-            </ul>
-          )
+                      {!r.cancelled && confirmingNo === r.no && (
+                        <div className="cancel-confirm">
+                          <span>Скасувати чек №{r.no}?</span>
+                          <button className="btn-danger" style={{ minHeight: 36, padding: '6px 14px' }} onClick={() => handleCancel(r.no)}>
+                            Так
+                          </button>
+                          <button className="btn-ghost-sm" onClick={() => setConfirmingNo(null)}>
+                            Ні
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
         }
 
       </div>

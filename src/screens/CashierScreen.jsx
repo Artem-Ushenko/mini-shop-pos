@@ -19,12 +19,15 @@ export default function CashierScreen({ cart, setCart, onCheckout, onReceipts, o
   }, [])
 
   const displayed = useMemo(() => {
+    let result = catalog
     if (search.trim()) {
       const q = search.trim().toLowerCase()
-      return catalog.filter(p => p.name.toLowerCase().includes(q))
+      result = result.filter(p => p.name.toLowerCase().includes(q))
+    } else if (activeCat) {
+      result = result.filter(p => p.cat === activeCat)
     }
-    if (activeCat) return catalog.filter(p => p.cat === activeCat)
-    return catalog
+    // Товари в наявності — спершу, немає в наявності — в кінці списку
+    return [...result].sort((a, b) => (a.stock === 0) - (b.stock === 0))
   }, [catalog, search, activeCat])
 
   // Скільки одиниць товару вже в кошику

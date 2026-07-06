@@ -68,7 +68,20 @@ export function parseCatalogCSV(text) {
 // Імпортує каталог з локального CSV-файлу (catalog.csv), який власник
 // редагує напряму в Excel — без Google Sheets і без мережі.
 
+// Простий хеш вмісту файлу — щоб не мерджити повторно, якщо catalog.csv
+// не змінювався з останнього імпорту (інакше lastImportTime посувається
+// вперед при кожному запуску й "перемагає" updatedAt нещодавнього продажу,
+// відкочуючи залишок до значення з файлу).
+function hashText(text) {
+  let h = 0
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0
+  return h.toString(36)
+}
+
 export async function importFromFile(csvText) {
+  const contentHash = hashText(csvText)
+  if (localStorage.getItem('lastImportHash') === contentHash) return
+
   const { categories, products } = parseCatalogCSV(csvText)
   if (!categories.length && !products.length) {
     throw new Error('Невірний формат: очікується CSV з секціями категорій і товарів (див. catalog.csv)')
@@ -97,4 +110,5 @@ export async function importFromFile(csvText) {
   }
 
   localStorage.setItem('lastImportTime', String(Date.now()))
+  localStorage.setItem('lastImportHash', contentHash)
 }
