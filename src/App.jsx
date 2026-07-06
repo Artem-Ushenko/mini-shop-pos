@@ -7,11 +7,17 @@ import ReceiptsScreen from './screens/ReceiptsScreen.jsx'
 import ManageCatalogScreen from './screens/ManageCatalogScreen.jsx'
 import StatsScreen from './screens/StatsScreen.jsx'
 import BackupScreen from './screens/BackupScreen.jsx'
+import PasswordGate from './screens/PasswordGate.jsx'
 import './index.css'
 
 // Постійний шлях каталогу — основний і незмінний файл, читається автоматично
 // при кожному запуску каси, без ручного імпорту.
 const CATALOG_URL = '/catalog.csv'
+
+// Задається через .env (VITE_APP_PASSWORD) лише для публічно розгорнутих
+// збірок (напр. Firebase Hosting) — локальна розробка без .env пароль не питає.
+const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD
+const UNLOCK_KEY = 'kasa-unlocked'
 
 export default function App() {
   const [screen, setScreen]   = useState('cashier')
@@ -20,6 +26,9 @@ export default function App() {
   const [dbError, setDbError] = useState(null)
   const [syncError, setSyncError] = useState(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [unlocked, setUnlocked] = useState(
+    !APP_PASSWORD || localStorage.getItem(UNLOCK_KEY) === '1'
+  )
 
   useEffect(() => {
     async function boot() {
@@ -48,6 +57,15 @@ export default function App() {
       window.removeEventListener('offline', goOffline)
     }
   }, [])
+
+  if (!unlocked) {
+    return (
+      <PasswordGate
+        correctPassword={APP_PASSWORD}
+        onUnlock={() => { localStorage.setItem(UNLOCK_KEY, '1'); setUnlocked(true) }}
+      />
+    )
+  }
 
   if (dbError)  return <div className="loading-screen err">Помилка бази: {dbError}</div>
   if (!dbReady) return <div className="loading-screen">Завантаження…</div>
