@@ -70,7 +70,7 @@ export default function BackupScreen({ onBack }) {
 
         <div className="card manage-backup">
           <p className="backup-hint">
-            Зберігає й відновлює каталог, залишки та всю історію чеків одним файлом —
+            Зберігає й відновлює каталог, залишки, історію чеків і змін одним файлом —
             використовуй для перенесення каси на інший ПК.
           </p>
           <div className="manage-backup-actions">

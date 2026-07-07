@@ -1,40 +1,173 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'kasa-db'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 // Товари, додані вручну через касу, отримують id з цього діапазону —
 // щоб ніколи не перетнутись з id з WooCommerce/Google Таблиці.
 const MANUAL_ID_START = 900_000
+
+// Дозволені причини сторно — чек без причини скасувати не можна.
+export const CANCEL_REASONS = ['помилка', 'повернення']
 
 let _db = null
 
 // Тільки для тестів — скидає singleton
 export function _resetDB() { _db = null }
 
+const REQUIRED_STORES = ['categories', 'products', 'receipts', 'shifts', 'config']
+
+// Ідемпотентне створення сховищ — викликається і при плановому апгрейді,
+// і при самовідновленні половинчастої бази.
+function createMissingStores(db) {
+  if (!db.objectStoreNames.contains('categories')) {
+    const cats = db.createObjectStore('categories', { keyPath: 'id' })
+    cats.createIndex('order', 'order')
+  }
+  if (!db.objectStoreNames.contains('products')) {
+    const prods = db.createObjectStore('products', { keyPath: 'id' })
+    prods.createIndex('cat', 'cat')
+  }
+  if (!db.objectStoreNames.contains('receipts')) {
+    const recs = db.createObjectStore('receipts', { keyPath: 'no', autoIncrement: true })
+    recs.createIndex('time', 'time')
+  }
+  if (!db.objectStoreNames.contains('shifts')) {
+    db.createObjectStore('shifts', { keyPath: 'id' })
+  }
+  if (!db.objectStoreNames.contains('config')) {
+    db.createObjectStore('config')
+  }
+}
+
 export async function initDB() {
   if (_db) return
-  _db = await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains('categories')) {
-        const cats = db.createObjectStore('categories', { keyPath: 'id' })
-        cats.createIndex('order', 'order')
-      }
-      if (!db.objectStoreNames.contains('products')) {
-        const prods = db.createObjectStore('products', { keyPath: 'id' })
-        prods.createIndex('cat', 'cat')
-      }
-      if (!db.objectStoreNames.contains('receipts')) {
-        const recs = db.createObjectStore('receipts', { keyPath: 'no', autoIncrement: true })
-        recs.createIndex('time', 'time')
-      }
-    },
-  })
+  let db = await openDB(DB_NAME, DB_VERSION, { upgrade: createMissingStores })
+    .catch(err => {
+      // БД уже на вищій версії, ніж знає код (напр. після самовідновлення
+      // нижче) — відкриваємо як є, сховища перевіримо окремо.
+      if (err.name === 'VersionError') return openDB(DB_NAME)
+      throw err
+    })
+
+  // Самовідновлення: якщо БД позначена актуальною версією, але якогось
+  // сховища бракує (половинчастий апгрейд — напр. вкладка з проміжним кодом),
+  // upgrade-колбек сам по собі більше не запуститься. Форсуємо його
+  // підняттям версії на 1 — createMissingStores створить лише відсутнє.
+  if (REQUIRED_STORES.some(s => !db.objectStoreNames.contains(s))) {
+    const healVersion = db.version + 1
+    db.close()
+    db = await openDB(DB_NAME, healVersion, { upgrade: createMissingStores })
+  }
+
+  _db = db
+  // Просимо браузер не витісняти IndexedDB при нестачі місця (best effort,
+  // відмова не критична — тому без await і без обробки результату).
+  if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+    navigator.storage.persist().catch(() => {})
+  }
 }
 
 function db() {
   if (!_db) throw new Error('DB не ініціалізована. Спочатку викличте initDB()')
   return _db
+}
+
+// ── Конфіг точки ───────────────────────────────────────────
+// { locationName: "Магазин, вул. Шевченка 12", cashiers: ["Оксана", ...] }
+// Кожен пристрій — самостійна каса однієї точки; назву/адресу вводить
+// власник при першому запуску, вона фіксується у змінах і чеках.
+
+const CONFIG_KEY = 'main'
+
+export async function getConfig() {
+  return (await db().get('config', CONFIG_KEY)) ?? null
+}
+
+export async function setConfig(cfg) {
+  if (!cfg || typeof cfg.locationName !== 'string' || !cfg.locationName.trim() || !Array.isArray(cfg.cashiers)) {
+    throw new Error('Невірний конфіг: потрібні назва точки (locationName) і cashiers[]')
+  }
+  const normalized = { ...cfg, locationName: cfg.locationName.trim() }
+  await db().put('config', normalized, CONFIG_KEY)
+  return normalized
+}
+
+// ── Зміни ──────────────────────────────────────────────────
+// shift: { id, loc, cashier, openedAt, closedAt, closedBy,
+//          receiptCount, stornoCount, total }
+// loc — назва точки з конфігу. id — читабельний: "{точка}-2026-07-08";
+// якщо зміну цього дня вже відкривали (перезміна) — суфікс "-2", "-3",
+// щоб id лишався унікальним.
+
+function localDateStr(ts) {
+  const d = new Date(ts)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+export async function getCurrentShift() {
+  const all = await db().getAll('shifts')
+  return all.find(s => !s.closedAt) ?? null
+}
+
+// Відкриває зміну. Якщо існує незакрита стара зміна (забули закрити) —
+// спочатку закриває її від імені системи. Повертає { shift, autoClosed },
+// де autoClosed — автозакрита стара зміна або null.
+export async function openShift(cashier) {
+  const name = (cashier ?? '').trim()
+  if (!name) throw new Error('Вкажіть касира, який відкриває зміну')
+
+  const config = await getConfig()
+  if (!config?.locationName) throw new Error('Каса не налаштована — спочатку вкажіть точку продажу')
+
+  const tx = db().transaction('shifts', 'readwrite')
+  const store = tx.objectStore('shifts')
+  const all = await store.getAll()
+
+  let autoClosed = null
+  const stale = all.find(s => !s.closedAt)
+  if (stale) {
+    stale.closedAt = Date.now()
+    stale.closedBy = 'system'
+    await store.put(stale)
+    autoClosed = stale
+  }
+
+  const base = `${config.locationName}-${localDateStr(Date.now())}`
+  let id = base
+  for (let n = 2; all.some(s => s.id === id); n++) id = `${base}-${n}`
+
+  const shift = {
+    id,
+    loc: config.locationName,
+    cashier: name,
+    openedAt: Date.now(),
+    closedAt: null,
+    closedBy: null,
+    receiptCount: 0,
+    stornoCount: 0,
+    total: 0,
+  }
+  await store.add(shift)
+  await tx.done
+
+  return { shift, autoClosed }
+}
+
+export async function closeShiftLocal(closedBy = 'cashier') {
+  const tx = db().transaction('shifts', 'readwrite')
+  const store = tx.objectStore('shifts')
+  const open = (await store.getAll()).find(s => !s.closedAt)
+  if (!open) {
+    await tx.done
+    return null
+  }
+  open.closedAt = Date.now()
+  open.closedBy = closedBy
+  await store.put(open)
+  await tx.done
+  return open
 }
 
 // ── Категорії ──────────────────────────────────────────────
@@ -83,10 +216,22 @@ export async function deleteProduct(id) {
 
 // ── Чеки ───────────────────────────────────────────────────
 
+// Продаж можливий лише при відкритій зміні (помилка з code: 'SHIFT_CLOSED').
+// receipt.no — внутрішній автоінкрементний ключ (стабільний і унікальний
+// назавжди), receipt.shiftNo — людський номер за зміну («М-1», «З-7»),
+// який щозміни починається з 1, тому ключем бути не може.
 export async function createReceipt(items, discount = 0) {
-  const tx = db().transaction(['products', 'receipts'], 'readwrite')
+  const tx = db().transaction(['products', 'receipts', 'shifts'], 'readwrite')
   const prodStore = tx.objectStore('products')
   const recStore = tx.objectStore('receipts')
+  const shiftStore = tx.objectStore('shifts')
+
+  const shift = (await shiftStore.getAll()).find(s => !s.closedAt)
+  if (!shift) {
+    const err = new Error('Зміна не відкрита — продаж неможливий')
+    err.code = 'SHIFT_CLOSED'
+    throw err
+  }
 
   // Перевірка залишків і списання stock
   for (const item of items) {
@@ -103,13 +248,23 @@ export async function createReceipt(items, discount = 0) {
   const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0)
   const total = Math.round(subtotal * (1 - discount / 100))
 
+  shift.receiptCount += 1
+  shift.total += total
+  await shiftStore.put(shift)
+
   const receipt = {
     time: Date.now(),
+    loc: shift.loc,
+    cashier: shift.cashier,
+    shiftId: shift.id,
+    // Префікс — перша літера назви точки: «Магазин…» → «М-1»
+    shiftNo: `${(shift.loc?.trim()[0] ?? '№').toUpperCase()}-${shift.receiptCount}`,
     items: items.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty })),
     subtotal,
     discount,
     total,
     cancelled: false,
+    cancelReason: null,
   }
 
   const no = await recStore.add(receipt)
@@ -118,10 +273,16 @@ export async function createReceipt(items, discount = 0) {
   return { ...receipt, no }
 }
 
-export async function cancelReceipt(no) {
-  const tx = db().transaction(['products', 'receipts'], 'readwrite')
+// Сторно вимагає причину — без неї чек не скасовується.
+export async function cancelReceipt(no, reason) {
+  if (!CANCEL_REASONS.includes(reason)) {
+    throw new Error(`Вкажіть причину сторно: ${CANCEL_REASONS.map(r => `«${r}»`).join(' або ')}`)
+  }
+
+  const tx = db().transaction(['products', 'receipts', 'shifts'], 'readwrite')
   const prodStore = tx.objectStore('products')
   const recStore = tx.objectStore('receipts')
+  const shiftStore = tx.objectStore('shifts')
 
   const receipt = await recStore.get(no)
   if (!receipt) throw new Error(`Чек №${no} не знайдено`)
@@ -138,46 +299,70 @@ export async function cancelReceipt(no) {
   }
 
   receipt.cancelled = true
+  receipt.cancelReason = reason
   await recStore.put(receipt)
-  await tx.done
 
+  // Підсумки зміни чека (навіть уже закритої) відображають сторно.
+  // Чеки до впровадження змін не мають shiftId — їх пропускаємо.
+  if (receipt.shiftId) {
+    const shift = await shiftStore.get(receipt.shiftId)
+    if (shift) {
+      shift.stornoCount += 1
+      shift.total -= receipt.total
+      await shiftStore.put(shift)
+    }
+  }
+
+  await tx.done
   return receipt
 }
 
-export async function getReceipts() {
-  return db().getAllFromIndex('receipts', 'time')
+export async function getReceipts(shiftId) {
+  const all = await db().getAllFromIndex('receipts', 'time')
+  return shiftId ? all.filter(r => r.shiftId === shiftId) : all
 }
 
 // ── Бекап (перенесення бази на інший ПК) ────────────────────
 
-const BACKUP_VERSION = 1
+// v2 додає зміни (shifts) і конфіг точки; бекапи v1 без них приймаються.
+const BACKUP_VERSION = 2
 
 export async function exportBackup() {
-  const [categories, products, receipts] = await Promise.all([
+  const [categories, products, receipts, shifts, config] = await Promise.all([
     db().getAll('categories'),
     db().getAll('products'),
     db().getAll('receipts'),
+    db().getAll('shifts'),
+    getConfig(),
   ])
-  return { version: BACKUP_VERSION, exportedAt: Date.now(), categories, products, receipts }
+  return { version: BACKUP_VERSION, exportedAt: Date.now(), categories, products, receipts, shifts, config }
 }
 
 export async function importBackup(backup) {
   if (!backup || !Array.isArray(backup.categories) || !Array.isArray(backup.products) || !Array.isArray(backup.receipts)) {
     throw new Error('Невірний формат файлу бекапу')
   }
+  const shifts = Array.isArray(backup.shifts) ? backup.shifts : []
 
-  const tx = db().transaction(['categories', 'products', 'receipts'], 'readwrite')
+  const tx = db().transaction(['categories', 'products', 'receipts', 'shifts', 'config'], 'readwrite')
   const catStore = tx.objectStore('categories')
   const prodStore = tx.objectStore('products')
   const recStore = tx.objectStore('receipts')
+  const shiftStore = tx.objectStore('shifts')
+  const configStore = tx.objectStore('config')
 
   await catStore.clear()
   await prodStore.clear()
   await recStore.clear()
+  await shiftStore.clear()
 
   for (const cat of backup.categories) await catStore.put(cat)
   for (const prod of backup.products) await prodStore.put(prod)
   for (const rec of backup.receipts) await recStore.put(rec)
+  for (const shift of shifts) await shiftStore.put(shift)
+  // Конфіг точки замінюємо лише якщо він є в бекапі (v1-бекапи його не мають) —
+  // інакше відновлення стерло б налаштування каси на цьому пристрої.
+  if (backup.config) await configStore.put(backup.config, CONFIG_KEY)
 
   await tx.done
 }

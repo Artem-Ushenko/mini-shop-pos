@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react'
-import { getReceipts, cancelReceipt, getDayTotal } from '../db.js'
+import { getReceipts, cancelReceipt, getDayTotal, CANCEL_REASONS } from '../db.js'
+
+// Старі чеки (до впровадження змін) мають лише числовий no,
+// нові — людський номер за зміну («М-1»)
+function receiptLabel(r) {
+  return r.shiftNo ? `Чек ${r.shiftNo}` : `Чек №${r.no}`
+}
 
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
@@ -44,10 +50,10 @@ export default function ReceiptsScreen({ onBack }) {
 
   useEffect(() => { load() }, [])
 
-  async function handleCancel(no) {
+  async function handleCancel(no, reason) {
     setError(null)
     try {
-      await cancelReceipt(no)
+      await cancelReceipt(no, reason)
       setConfirmingNo(null)
       await load()
     } catch (e) {
@@ -90,9 +96,14 @@ export default function ReceiptsScreen({ onBack }) {
                   <li key={r.no} className={`receipt-card card${r.cancelled ? ' cancelled' : ''}`}>
 
                     <div className="receipt-head">
-                      <span className="receipt-no">Чек №{r.no}</span>
+                      <span className="receipt-no">{receiptLabel(r)}</span>
                       <span className="receipt-time">{fmtDate(r.time)} {fmtTime(r.time)}</span>
-                      {r.cancelled && <span className="badge-cancelled">СТОРНО</span>}
+                      {r.cashier && <span className="receipt-cashier">👤 {r.cashier}</span>}
+                      {r.cancelled && (
+                        <span className="badge-cancelled">
+                          СТОРНО{r.cancelReason ? ` · ${r.cancelReason}` : ''}
+                        </span>
+                      )}
                     </div>
 
                     <ul className="receipt-items">
@@ -121,12 +132,19 @@ export default function ReceiptsScreen({ onBack }) {
 
                       {!r.cancelled && confirmingNo === r.no && (
                         <div className="cancel-confirm">
-                          <span>Скасувати чек №{r.no}?</span>
-                          <button className="btn-danger" style={{ minHeight: 36, padding: '6px 14px' }} onClick={() => handleCancel(r.no)}>
-                            Так
-                          </button>
+                          <span>Причина сторно ({r.shiftNo ?? `№${r.no}`}):</span>
+                          {CANCEL_REASONS.map(reason => (
+                            <button
+                              key={reason}
+                              className="btn-danger"
+                              style={{ minHeight: 36, padding: '6px 14px' }}
+                              onClick={() => handleCancel(r.no, reason)}
+                            >
+                              {reason[0].toUpperCase() + reason.slice(1)}
+                            </button>
+                          ))}
                           <button className="btn-ghost-sm" onClick={() => setConfirmingNo(null)}>
-                            Ні
+                            Не скасовувати
                           </button>
                         </div>
                       )}

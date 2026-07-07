@@ -1,11 +1,34 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getCategories, getProducts } from '../db.js'
+import { getCategories, getProducts, getCurrentShift, closeShiftLocal } from '../db.js'
 
-export default function CashierScreen({ cart, setCart, onCheckout, onReceipts, onManage, onStats, onBackup }) {
+export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onCheckout, onReceipts, onManage, onStats, onBackup }) {
   const [categories, setCategories] = useState([])
   const [catalog, setCatalog] = useState([])
   const [activeCat, setActiveCat] = useState(null)
   const [search, setSearch] = useState('')
+  // Підсумок зміни для модалки закриття — читається з БД у момент відкриття
+  // модалки, бо лічильники зміни живуть у IndexedDB, а не в пропсі shift.
+  const [closingShift, setClosingShift] = useState(null)
+  const [closeError, setCloseError] = useState(null)
+
+  async function handleCloseShiftClick() {
+    setCloseError(null)
+    try {
+      setClosingShift(await getCurrentShift())
+    } catch (e) {
+      setCloseError(e.message)
+    }
+  }
+
+  async function handleConfirmClose() {
+    try {
+      await closeShiftLocal()
+      onShiftClosed()
+    } catch (e) {
+      setClosingShift(null)
+      setCloseError(e.message)
+    }
+  }
 
   async function loadCatalog() {
     const [cats, prods] = await Promise.all([getCategories(), getProducts()])
@@ -64,14 +87,42 @@ export default function CashierScreen({ cart, setCart, onCheckout, onReceipts, o
       <div className="catalog-panel">
 
         <header className="app-header">
-          <h1>ГЕРКУЛЕС ШОП</h1>
+          <div className="header-brand">
+            <h1>ГЕРКУЛЕС ШОП</h1>
+            <span className="shift-badge">
+              {shift.loc} · 👤 {shift.cashier}
+            </span>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn-ghost" onClick={onManage}>Облік товарів</button>
             <button className="btn-ghost" onClick={onReceipts}>Журнал</button>
             <button className="btn-ghost" onClick={onStats}>Статистика</button>
             <button className="btn-ghost" onClick={onBackup}>Бекапи</button>
+            <button className="btn-ghost btn-ghost-danger" onClick={handleCloseShiftClick}>
+              Закрити зміну
+            </button>
           </div>
         </header>
+
+        {closeError && <p className="error-msg" style={{ margin: '8px 16px' }}>{closeError}</p>}
+
+        {closingShift && (
+          <div className="modal-overlay" onClick={() => setClosingShift(null)}>
+            <div className="card modal-card" onClick={e => e.stopPropagation()}>
+              <h2>Закрити зміну?</h2>
+              <ul className="shift-summary">
+                <li><span>Касир</span><strong>{closingShift.cashier}</strong></li>
+                <li><span>Чеків</span><strong>{closingShift.receiptCount}</strong></li>
+                <li><span>Сторно</span><strong>{closingShift.stornoCount}</strong></li>
+                <li><span>Виторг</span><strong>{closingShift.total.toLocaleString('uk-UA')} ₴</strong></li>
+              </ul>
+              <div className="modal-actions">
+                <button className="btn-danger" onClick={handleConfirmClose}>Закрити зміну</button>
+                <button className="btn-ghost" onClick={() => setClosingShift(null)}>Скасувати</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="search-bar">
           <input
