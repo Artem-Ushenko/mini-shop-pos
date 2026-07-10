@@ -3,7 +3,7 @@ import { openShift, setConfig } from '../db.js'
 
 // Без відкритої зміни продаж недоступний: цей екран стоїть між запуском каси
 // і головним екраном. Журнал, облік, статистика і бекапи доступні й без зміни.
-export default function OpenShiftScreen({ config, onOpened, onConfigChange, onReceipts, onManage, onStats, onBackup }) {
+export default function OpenShiftScreen({ config, onOpened, onConfigChange, onReceipts, onManage, onStats, onBackup, onDeliveries }) {
   const [error, setError] = useState(null)
   const [opening, setOpening] = useState(false)
   const [showAddCashier, setShowAddCashier] = useState(false)
@@ -79,6 +79,7 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
 
         <div className="shift-screen-links">
           <button className="btn-ghost-sm" onClick={onManage}>Облік товарів</button>
+          <button className="btn-ghost-sm" onClick={onDeliveries}>Поставки</button>
           <button className="btn-ghost-sm" onClick={onReceipts}>Журнал</button>
           <button className="btn-ghost-sm" onClick={onStats}>Статистика</button>
           <button className="btn-ghost-sm" onClick={onBackup}>Бекапи</button>

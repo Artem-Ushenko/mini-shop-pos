@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'kasa-db'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 // Товари, додані вручну через касу, отримують id з цього діапазону —
 // щоб ніколи не перетнутись з id з WooCommerce/Google Таблиці.
@@ -15,7 +15,7 @@ let _db = null
 // Тільки для тестів — скидає singleton
 export function _resetDB() { _db = null }
 
-const REQUIRED_STORES = ['categories', 'products', 'receipts', 'shifts', 'config']
+const REQUIRED_STORES = ['categories', 'products', 'receipts', 'shifts', 'config', 'deliveries']
 
 // Ідемпотентне створення сховищ — викликається і при плановому апгрейді,
 // і при самовідновленні половинчастої бази.
@@ -37,6 +37,10 @@ function createMissingStores(db) {
   }
   if (!db.objectStoreNames.contains('config')) {
     db.createObjectStore('config')
+  }
+  if (!db.objectStoreNames.contains('deliveries')) {
+    const dels = db.createObjectStore('deliveries', { keyPath: 'id', autoIncrement: true })
+    dels.createIndex('time', 'time')
   }
 }
 
@@ -197,15 +201,23 @@ export async function createProduct({ cat, name, price, stock, cost = 0 }) {
   const all = await db().getAll('products')
   const manualIds = all.map(p => p.id).filter(id => id >= MANUAL_ID_START)
   const id = manualIds.length ? Math.max(...manualIds) + 1 : MANUAL_ID_START
-  const product = { id, cat, name, price, cost, stock, updatedAt: Date.now() }
+  const now = Date.now()
+  const product = { id, cat, name, price, cost, stock, updatedAt: now, priceUpdatedAt: now }
   await db().put('products', product)
   return product
 }
 
+// priceUpdatedAt — окрема мітка часу лише для ціни/собівартості (на відміну
+// від updatedAt, який чіпають і продажі/поставки). sync.js звіряється саме
+// з нею, щоб відрізнити «товар просто продавався» від «власник вручну
+// підправив ціну» — і не втратити ручну правку при наступному імпорті
+// catalog.csv, але й не заблокувати оновлення ціни з файлу для товарів,
+// які просто активно продаються.
 export async function updateProduct(id, { name, price, stock, cost = 0 }) {
   const product = await db().get('products', id)
   if (!product) throw new Error(`Товар ${id} не знайдено`)
-  const updated = { ...product, name, price, cost, stock, updatedAt: Date.now() }
+  const now = Date.now()
+  const updated = { ...product, name, price, cost, stock, updatedAt: now, priceUpdatedAt: now }
   await db().put('products', updated)
   return updated
 }
@@ -322,20 +334,63 @@ export async function getReceipts(shiftId) {
   return shiftId ? all.filter(r => r.shiftId === shiftId) : all
 }
 
+// ── Поставки (надходження товару) ────────────────────────────
+// delivery: { id, time, items: [{id, name, qty}], note }
+// Приймання товару — протилежність продажу: лише збільшує stock,
+// ніколи не зменшує. Окремий журнал, щоб бачити, звідки взявся залишок.
+
+export async function receiveDelivery(items, note = '') {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('Додайте хоча б один товар до поставки')
+  }
+  for (const item of items) {
+    if (!item.qty || item.qty <= 0) {
+      throw new Error(`Вкажіть додатну кількість для "${item.name}"`)
+    }
+  }
+
+  const tx = db().transaction(['products', 'deliveries'], 'readwrite')
+  const prodStore = tx.objectStore('products')
+  const delStore = tx.objectStore('deliveries')
+
+  for (const item of items) {
+    const product = await prodStore.get(item.id)
+    if (!product) throw new Error(`Товар ${item.id} не знайдено`)
+    product.stock += item.qty
+    product.updatedAt = Date.now()
+    await prodStore.put(product)
+  }
+
+  const delivery = {
+    time: Date.now(),
+    items: items.map(i => ({ id: i.id, name: i.name, qty: i.qty })),
+    note: (note ?? '').trim(),
+  }
+  const id = await delStore.add(delivery)
+  await tx.done
+
+  return { ...delivery, id }
+}
+
+export async function getDeliveries() {
+  return db().getAllFromIndex('deliveries', 'time')
+}
+
 // ── Бекап (перенесення бази на інший ПК) ────────────────────
 
-// v2 додає зміни (shifts) і конфіг точки; бекапи v1 без них приймаються.
-const BACKUP_VERSION = 2
+// v3 додає поставки (deliveries); бекапи v1/v2 без них приймаються.
+const BACKUP_VERSION = 3
 
 export async function exportBackup() {
-  const [categories, products, receipts, shifts, config] = await Promise.all([
+  const [categories, products, receipts, shifts, deliveries, config] = await Promise.all([
     db().getAll('categories'),
     db().getAll('products'),
     db().getAll('receipts'),
     db().getAll('shifts'),
+    db().getAll('deliveries'),
     getConfig(),
   ])
-  return { version: BACKUP_VERSION, exportedAt: Date.now(), categories, products, receipts, shifts, config }
+  return { version: BACKUP_VERSION, exportedAt: Date.now(), categories, products, receipts, shifts, deliveries, config }
 }
 
 export async function importBackup(backup) {
@@ -343,23 +398,27 @@ export async function importBackup(backup) {
     throw new Error('Невірний формат файлу бекапу')
   }
   const shifts = Array.isArray(backup.shifts) ? backup.shifts : []
+  const deliveries = Array.isArray(backup.deliveries) ? backup.deliveries : []
 
-  const tx = db().transaction(['categories', 'products', 'receipts', 'shifts', 'config'], 'readwrite')
+  const tx = db().transaction(['categories', 'products', 'receipts', 'shifts', 'deliveries', 'config'], 'readwrite')
   const catStore = tx.objectStore('categories')
   const prodStore = tx.objectStore('products')
   const recStore = tx.objectStore('receipts')
   const shiftStore = tx.objectStore('shifts')
+  const delStore = tx.objectStore('deliveries')
   const configStore = tx.objectStore('config')
 
   await catStore.clear()
   await prodStore.clear()
   await recStore.clear()
   await shiftStore.clear()
+  await delStore.clear()
 
   for (const cat of backup.categories) await catStore.put(cat)
   for (const prod of backup.products) await prodStore.put(prod)
   for (const rec of backup.receipts) await recStore.put(rec)
   for (const shift of shifts) await shiftStore.put(shift)
+  for (const del of deliveries) await delStore.put(del)
   // Конфіг точки замінюємо лише якщо він є в бекапі (v1-бекапи його не мають) —
   // інакше відновлення стерло б налаштування каси на цьому пристрої.
   if (backup.config) await configStore.put(backup.config, CONFIG_KEY)

@@ -23,6 +23,8 @@ import {
   getStats,
   getTodayStats,
   getFullStats,
+  receiveDelivery,
+  getDeliveries,
   exportBackup,
   importBackup,
 } from './db.js'
@@ -33,7 +35,7 @@ beforeEach(async () => {
   await initDB()
 
   // Засіваємо тестові дані
-  const db = await openDB('kasa-db', 2)
+  const db = await openDB('kasa-db', 3)
   const tx = db.transaction(['categories', 'products'], 'readwrite')
   await tx.objectStore('categories').put({ id: 'kava', name: 'Кава', emoji: '☕', order: 1 })
   await tx.objectStore('categories').put({ id: 'yizha', name: 'Їжа', emoji: '🥐', order: 2 })
@@ -158,7 +160,7 @@ describe('createProduct', () => {
   })
 
   it('не перетинається з існуючими id з WooCommerce/Таблиці', async () => {
-    const db = await (await import('idb')).openDB('kasa-db', 2)
+    const db = await (await import('idb')).openDB('kasa-db', 3)
     await db.put('products', { id: 950_000, cat: 'kava', name: 'Імпортований', price: 10, stock: 1, updatedAt: Date.now() })
     db.close()
 
@@ -172,6 +174,11 @@ describe('createProduct', () => {
 
     const withCost = await createProduct({ cat: 'kava', name: 'Раф', price: 70, stock: 3, cost: 25 })
     expect(withCost.cost).toBe(25)
+  })
+
+  it('позначає ціну як щойно встановлену вручну (priceUpdatedAt)', async () => {
+    const product = await createProduct({ cat: 'kava', name: 'Латте', price: 60, stock: 5 })
+    expect(product.priceUpdatedAt).toBe(product.updatedAt)
   })
 })
 
@@ -191,6 +198,11 @@ describe('updateProduct', () => {
 
   it('кидає помилку для неіснуючого товару', async () => {
     await expect(updateProduct(9999, { name: 'X', price: 1, stock: 1 })).rejects.toThrow('не знайдено')
+  })
+
+  it('позначає ціну як щойно відредаговану вручну (priceUpdatedAt)', async () => {
+    const updated = await updateProduct(1, { name: 'Еспресо', price: 50, stock: 10 })
+    expect(updated.priceUpdatedAt).toBe(updated.updatedAt)
   })
 })
 
@@ -228,7 +240,7 @@ describe('getDayTotal', () => {
 describe('getStats', () => {
   it('рахує вартість залишку по ціні продажу і по собівартості', async () => {
     // Еспресо: price 45, stock 10; Американо: price 50, stock 5 (без cost — з seed-даних)
-    const db = await (await import('idb')).openDB('kasa-db', 2)
+    const db = await (await import('idb')).openDB('kasa-db', 3)
     await db.put('products', { id: 1, cat: 'kava', name: 'Еспресо', price: 45, stock: 10, cost: 20, updatedAt: Date.now() })
     await db.put('products', { id: 2, cat: 'kava', name: 'Американо', price: 50, stock: 5, cost: 25, updatedAt: Date.now() })
     db.close()
@@ -297,7 +309,7 @@ describe('exportBackup / importBackup', () => {
     await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }])
 
     const backup = await exportBackup()
-    expect(backup.version).toBe(2)
+    expect(backup.version).toBe(3)
     expect(backup.exportedAt).toBeGreaterThan(0)
     expect(backup.categories).toHaveLength(2)
     expect(backup.products).toHaveLength(2)
@@ -475,7 +487,7 @@ describe('cancelReceipt з причиною', () => {
 
     await cancelReceipt(r.no, 'повернення')
 
-    const db = await openDB('kasa-db', 2)
+    const db = await openDB('kasa-db', 3)
     const oldShift = await db.get('shifts', shiftId)
     db.close()
     expect(oldShift.stornoCount).toBe(1)
@@ -497,11 +509,80 @@ describe('getReceipts(shiftId)', () => {
   })
 })
 
+describe('receiveDelivery / getDeliveries', () => {
+  it('збільшує залишок товарів і повертає запис поставки', async () => {
+    const items = [{ id: 1, name: 'Еспресо', qty: 20 }, { id: 2, name: 'Американо', qty: 5 }]
+    const delivery = await receiveDelivery(items, 'Накладна №42')
+
+    expect(delivery.id).toBeDefined()
+    expect(delivery.note).toBe('Накладна №42')
+    expect(delivery.items).toEqual(items)
+    expect(delivery.time).toBeGreaterThan(0)
+
+    const products = await getProducts()
+    expect(products.find(p => p.id === 1).stock).toBe(30) // 10 + 20
+    expect(products.find(p => p.id === 2).stock).toBe(10) // 5 + 5
+  })
+
+  it('трактує відсутню примітку як порожній рядок', async () => {
+    const delivery = await receiveDelivery([{ id: 1, name: 'Еспресо', qty: 1 }])
+    expect(delivery.note).toBe('')
+  })
+
+  it('кидає помилку для порожнього списку товарів', async () => {
+    await expect(receiveDelivery([])).rejects.toThrow('Додайте хоча б один товар')
+  })
+
+  it('кидає помилку для недодатної кількості й не змінює stock', async () => {
+    await expect(receiveDelivery([{ id: 1, name: 'Еспресо', qty: 0 }])).rejects.toThrow('додатну кількість')
+    expect((await getProducts()).find(p => p.id === 1).stock).toBe(10)
+  })
+
+  it('кидає помилку для неіснуючого товару', async () => {
+    await expect(receiveDelivery([{ id: 9999, name: 'Невідомий', qty: 1 }])).rejects.toThrow('не знайдено')
+  })
+
+  it('getDeliveries повертає поставки відсортовані за часом', async () => {
+    await receiveDelivery([{ id: 1, name: 'Еспресо', qty: 5 }])
+    await receiveDelivery([{ id: 2, name: 'Американо', qty: 3 }])
+
+    const deliveries = await getDeliveries()
+    expect(deliveries).toHaveLength(2)
+    expect(deliveries[0].time).toBeLessThanOrEqual(deliveries[1].time)
+  })
+})
+
+describe('бекап v3: поставки', () => {
+  it('експортує й відновлює поставки разом з рештою бази', async () => {
+    await receiveDelivery([{ id: 1, name: 'Еспресо', qty: 5 }], 'Постачальник А')
+    const backup = await exportBackup()
+    expect(backup.deliveries).toHaveLength(1)
+
+    await receiveDelivery([{ id: 2, name: 'Американо', qty: 2 }])
+    await importBackup(backup)
+
+    const deliveries = await getDeliveries()
+    expect(deliveries).toHaveLength(1) // друга поставка зникла разом з рештою
+    expect(deliveries[0].note).toBe('Постачальник А')
+    expect((await getProducts()).find(p => p.id === 1).stock).toBe(15) // стан на момент бекапу
+  })
+
+  it('приймає бекап v2 без поставок', async () => {
+    const backup = await exportBackup()
+    delete backup.deliveries
+    backup.version = 2
+
+    await importBackup(backup)
+
+    expect(await getDeliveries()).toEqual([])
+  })
+})
+
 describe('бекап v2: зміни і конфіг', () => {
   it('експортує зміни і конфіг, відновлює їх разом з рештою', async () => {
     await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }])
     const backup = await exportBackup()
-    expect(backup.version).toBe(2)
+    expect(backup.version).toBe(3)
     expect(backup.shifts).toHaveLength(1)
     expect(backup.config.locationName).toBe('Магазин')
 
@@ -528,12 +609,12 @@ describe('бекап v2: зміни і конфіг', () => {
 })
 
 describe('initDB: самовідновлення бази', () => {
-  it('додає відсутні сховища, якщо БД вже v2 без shifts/config (половинчастий апгрейд)', async () => {
+  it('додає відсутні сховища, якщо БД вже v3 без shifts/config/deliveries (половинчастий апгрейд)', async () => {
     _resetDB()
     globalThis.indexedDB = new IDBFactory()
-    // Відтворюємо стан: версія 2, але нових сховищ немає
+    // Відтворюємо стан: версія 3, але нових сховищ немає
     await new Promise((resolve, reject) => {
-      const req = indexedDB.open('kasa-db', 2)
+      const req = indexedDB.open('kasa-db', 3)
       req.onupgradeneeded = () => {
         const db = req.result
         db.createObjectStore('categories', { keyPath: 'id' }).createIndex('order', 'order')
@@ -548,6 +629,7 @@ describe('initDB: самовідновлення бази', () => {
 
     expect(await getConfig()).toBeNull() // сховище config існує і читається
     expect(await getCurrentShift()).toBeNull() // сховище shifts існує
+    expect(await getDeliveries()).toEqual([]) // сховище deliveries існує
     await setConfig({ locationName: 'Зал', cashiers: ['Оксана'] })
     const { shift } = await openShift('Оксана')
     expect(shift.loc).toBe('Зал')
@@ -567,6 +649,7 @@ describe('initDB: самовідновлення бази', () => {
         db.createObjectStore('receipts', { keyPath: 'no', autoIncrement: true }).createIndex('time', 'time')
         db.createObjectStore('shifts', { keyPath: 'id' })
         db.createObjectStore('config')
+        db.createObjectStore('deliveries', { keyPath: 'id', autoIncrement: true }).createIndex('time', 'time')
       }
       req.onsuccess = () => {
         const db = req.result

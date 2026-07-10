@@ -113,6 +113,46 @@ describe('importFromFile', () => {
     )
   })
 
+  it('підтягує нову ціну з файлу, навіть якщо товар нещодавно продавався (без ручного редагування ціни)', async () => {
+    const recentUpdatedAt = Date.now()
+    db.getProducts.mockResolvedValue([
+      { id: 1, cat: 'protein', name: 'Whey 900г', price: 999, cost: 1, stock: 8, updatedAt: recentUpdatedAt },
+      // priceUpdatedAt відсутній — ціну ніколи не редагували вручну
+    ])
+
+    await importFromFile(SAMPLE_CSV) // файл має ціну 1250, собівартість 850
+
+    expect(db.putProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, price: 1250, cost: 850, stock: 8 }) // stock лишився локальний, ціна — з файлу
+    )
+  })
+
+  it('зберігає ручну ціну і собівартість, якщо їх редагували після останнього імпорту', async () => {
+    const now = Date.now()
+    db.getProducts.mockResolvedValue([
+      { id: 1, cat: 'protein', name: 'Whey 900г', price: 1400, cost: 900, stock: 12, updatedAt: now, priceUpdatedAt: now },
+    ])
+
+    await importFromFile(SAMPLE_CSV) // файл має ціну 1250, собівартість 850
+
+    expect(db.putProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, price: 1400, cost: 900 })
+    )
+  })
+
+  it('підтягує нову ціну з файлу, якщо ручне редагування відбулось до останнього імпорту', async () => {
+    localStorage.setItem('lastImportTime', '2000')
+    db.getProducts.mockResolvedValue([
+      { id: 1, cat: 'protein', name: 'Whey 900г', price: 1400, cost: 900, stock: 12, updatedAt: 3000, priceUpdatedAt: 1000 },
+    ])
+
+    await importFromFile(SAMPLE_CSV)
+
+    expect(db.putProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, price: 1250, cost: 850 })
+    )
+  })
+
   it('зберігає lastImportTime після успішного імпорту', async () => {
     db.getProducts.mockResolvedValue([])
     const before = Date.now()

@@ -3,10 +3,16 @@ import { getCategories, getProducts, createProduct, updateProduct, deleteProduct
 
 const PAGE_SIZE = 30
 
+// Залишок ≤ цього числа — товар в списку "Пора замовляти" (той самий поріг,
+// що планувався для Telegram-дайджесту в v6-специфікації).
+const LOW_STOCK_THRESHOLD = 3
+
 export default function ManageCatalogScreen({ onBack }) {
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
   const [search, setSearch] = useState('')
+  const [catFilter, setCatFilter] = useState('')
+  const [availFilter, setAvailFilter] = useState('all') // 'all' | 'in' | 'out' | 'low'
   const [confirmingId, setConfirmingId] = useState(null)
   const [error, setError] = useState(null)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
@@ -26,15 +32,25 @@ export default function ManageCatalogScreen({ onBack }) {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [search])
+  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [search, catFilter, availFilter])
 
   const catName = (id) => categories.find(c => c.id === id)?.name ?? id
 
   const displayed = useMemo(() => {
-    if (!search.trim()) return products
-    const q = search.trim().toLowerCase()
-    return products.filter(p => p.name.toLowerCase().includes(q))
-  }, [products, search])
+    let result = products
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      result = result.filter(p => p.name.toLowerCase().includes(q))
+    }
+    if (catFilter) result = result.filter(p => p.cat === catFilter)
+    if (availFilter === 'in') result = result.filter(p => p.stock > 0)
+    else if (availFilter === 'out') result = result.filter(p => p.stock === 0)
+    else if (availFilter === 'low') {
+      // Найтерміновіші (менший залишок) — зверху списку.
+      result = result.filter(p => p.stock <= LOW_STOCK_THRESHOLD).sort((a, b) => a.stock - b.stock)
+    }
+    return result
+  }, [products, search, catFilter, availFilter])
 
   const visible = displayed.slice(0, visibleCount)
   const hasMore = visibleCount < displayed.length
@@ -125,6 +141,20 @@ export default function ManageCatalogScreen({ onBack }) {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+        </div>
+        <div className="manage-filters">
+          <select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+            <option value="">Всі категорії</option>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+            ))}
+          </select>
+          <select value={availFilter} onChange={e => setAvailFilter(e.target.value)}>
+            <option value="all">Всі товари</option>
+            <option value="in">В наявності</option>
+            <option value="out">Немає в наявності</option>
+            <option value="low">Пора замовляти (≤{LOW_STOCK_THRESHOLD} шт)</option>
+          </select>
         </div>
         <button className="btn-ghost manage-toggle-add" onClick={() => setShowAddForm(s => !s)}>
           {showAddForm ? '− Приховати форму' : '+ Додати товар'}

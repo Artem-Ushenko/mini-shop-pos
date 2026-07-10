@@ -7,6 +7,7 @@ import ReceiptsScreen from './screens/ReceiptsScreen.jsx'
 import ManageCatalogScreen from './screens/ManageCatalogScreen.jsx'
 import StatsScreen from './screens/StatsScreen.jsx'
 import BackupScreen from './screens/BackupScreen.jsx'
+import DeliveriesScreen from './screens/DeliveriesScreen.jsx'
 import PasswordGate from './screens/PasswordGate.jsx'
 import SetupScreen from './screens/SetupScreen.jsx'
 import OpenShiftScreen from './screens/OpenShiftScreen.jsx'
@@ -103,6 +104,7 @@ export default function App() {
     onManage: () => setScreen('manage'),
     onStats: () => setScreen('stats'),
     onBackup: () => setScreen('backup'),
+    onDeliveries: () => setScreen('deliveries'),
   }
 
   // Забута вчорашня зміна не продовжується мовчки: каса показує екран
@@ -154,6 +156,9 @@ export default function App() {
       )}
       {screen === 'backup' && (
         <BackupScreen onBack={() => setScreen('cashier')} />
+      )}
+      {screen === 'deliveries' && (
+        <DeliveriesScreen onBack={() => setScreen('cashier')} />
       )}
       {screen === 'cashier' && !activeShift && (
         <OpenShiftScreen

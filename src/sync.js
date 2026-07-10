@@ -100,13 +100,28 @@ export async function importFromFile(csvText) {
     if (!local) {
       // Новий товар — беремо все з файлу
       await putProduct({ ...csvProduct, updatedAt: Date.now() })
-    } else if (local.updatedAt > lastImportTime) {
-      // Локально змінено після останнього імпорту (були продажі) — зберігаємо stock
-      await putProduct({ ...csvProduct, stock: local.stock, updatedAt: local.updatedAt })
-    } else {
-      // Не змінювався локально — повністю перезаписуємо
-      await putProduct({ ...csvProduct, updatedAt: Date.now() })
+      continue
     }
+
+    // Залишок продавався/поповнювався локально після останнього імпорту —
+    // довіряємо локальному stock, а не файлу.
+    const stockChangedLocally = local.updatedAt > lastImportTime
+    // Ціну/собівартість власник міг підправити вручну в «Обліку товарів»
+    // (priceUpdatedAt) — це окремий сигнал від updatedAt, бо той самий
+    // updatedAt чіпають і продажі, які до ціни не мають стосунку. Без цього
+    // розрізнення ручна правка ціни губилась би при наступному імпорті CSV
+    // (stock зберігався б, а price/cost — ні), а зайва прив'язка до updatedAt
+    // заблокувала б підтягування нових цін з файлу для товарів, що активно продаються.
+    const priceEditedLocally = local.priceUpdatedAt && local.priceUpdatedAt > lastImportTime
+
+    await putProduct({
+      ...csvProduct,
+      stock: stockChangedLocally ? local.stock : csvProduct.stock,
+      price: priceEditedLocally ? local.price : csvProduct.price,
+      cost: priceEditedLocally ? local.cost : csvProduct.cost,
+      priceUpdatedAt: local.priceUpdatedAt,
+      updatedAt: stockChangedLocally ? local.updatedAt : Date.now(),
+    })
   }
 
   localStorage.setItem('lastImportTime', String(Date.now()))

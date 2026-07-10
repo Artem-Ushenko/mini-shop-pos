@@ -451,11 +451,18 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .manage-layout { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
 .manage-toolbar {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-wrap: wrap;
   background: var(--c-card); border-bottom: 1px solid var(--c-border); flex-shrink: 0;
 }
-.manage-toolbar .search-bar { flex: 1; padding: 0; background: none; border-bottom: none; }
+.manage-toolbar .search-bar { flex: 1; min-width: 160px; padding: 0; background: none; border-bottom: none; }
 .manage-toggle-add { white-space: nowrap; }
+
+.manage-filters { display: flex; gap: 8px; flex-shrink: 0; }
+.manage-filters select {
+  height: 44px; padding: 0 10px; border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm); font-size: 0.9rem; background: var(--c-card); color: var(--c-text);
+}
+.manage-filters select:focus { border-color: var(--c-primary); }
 
 .manage-body {
   flex: 1; overflow-y: auto; padding: 16px;
