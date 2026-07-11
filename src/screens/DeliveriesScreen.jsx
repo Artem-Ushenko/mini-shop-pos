@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getProducts, receiveDelivery, getDeliveries } from '../db.js'
+import { getProducts, getCategories, createProduct, receiveDelivery, getDeliveries } from '../db.js'
 
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
@@ -39,6 +39,10 @@ export default function DeliveriesScreen({ onBack }) {
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState(null)
   const [deliveries, setDeliveries] = useState([])
+  const [categories, setCategories] = useState([])
+  const [showNewForm, setShowNewForm] = useState(false)
+  const [newForm, setNewForm] = useState({ cat: '', name: '', price: '', cost: '' })
+  const [newError, setNewError] = useState(null)
 
   async function loadProducts() {
     setProducts(await getProducts())
@@ -49,6 +53,7 @@ export default function DeliveriesScreen({ onBack }) {
   }
 
   useEffect(() => { loadProducts() }, [])
+  useEffect(() => { getCategories().then(setCategories) }, [])
   useEffect(() => { if (mode === 'journal') loadDeliveries() }, [mode])
 
   const displayed = useMemo(() => {
@@ -64,6 +69,42 @@ export default function DeliveriesScreen({ onBack }) {
       if (exists) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
       return [...prev, { id: product.id, name: product.name, qty: 1 }]
     })
+  }
+
+  function openNewForm() {
+    setNewForm(f => ({ ...f, name: f.name || search.trim() }))
+    setNewError(null)
+    setShowNewForm(true)
+  }
+
+  // Створює товар у БД і одразу кладе його в кошик поставки.
+  // stock: 0 — кількість оприбуткує сама поставка, інакше залишок подвоївся б.
+  async function handleCreateProduct(e) {
+    e.preventDefault()
+    setNewError(null)
+
+    const name = newForm.name.trim()
+    const price = Number(newForm.price)
+    const cost = newForm.cost === '' ? 0 : Number(newForm.cost)
+
+    if (!newForm.cat) return setNewError('Оберіть категорію')
+    if (!name) return setNewError('Вкажіть назву товару')
+    if (!price || price <= 0) return setNewError('Вкажіть коректну ціну')
+    if (cost < 0 || !Number.isFinite(cost)) return setNewError('Вкажіть коректну собівартість')
+
+    const existing = products.find(p => p.name.trim().toLowerCase() === name.toLowerCase())
+    if (existing) return setNewError('Такий товар вже є в базі — знайдіть його через пошук вище')
+
+    try {
+      const product = await createProduct({ cat: newForm.cat, name, price, cost, stock: 0 })
+      addToPending(product)
+      setNewForm(f => ({ ...f, name: '', price: '', cost: '' }))
+      setShowNewForm(false)
+      setSearch('')
+      await loadProducts()
+    } catch (err) {
+      setNewError(err.message)
+    }
   }
 
   function updateQty(id, delta) {
@@ -129,9 +170,71 @@ export default function DeliveriesScreen({ onBack }) {
             />
           </div>
 
-          {search.trim() && (
+          <button
+            className="btn-ghost"
+            onClick={() => showNewForm ? setShowNewForm(false) : openNewForm()}
+          >
+            {showNewForm ? '− Приховати форму' : '+ Новий товар'}
+          </button>
+
+          {showNewForm && (
+            <form className="manage-add-form card" onSubmit={handleCreateProduct}>
+              <div className="manage-form-row">
+                <select
+                  value={newForm.cat}
+                  onChange={e => setNewForm(f => ({ ...f, cat: e.target.value }))}
+                >
+                  <option value="">Категорія…</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="manage-form-row">
+                <input
+                  type="text"
+                  placeholder="Назва товару"
+                  value={newForm.name}
+                  onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+
+              <div className="manage-form-row manage-form-row-split">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="Ціна, ₴"
+                  value={newForm.price}
+                  onChange={e => setNewForm(f => ({ ...f, price: e.target.value }))}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="Собівартість, ₴"
+                  value={newForm.cost}
+                  onChange={e => setNewForm(f => ({ ...f, cost: e.target.value }))}
+                />
+              </div>
+
+              {newError && <p className="error-msg">{newError}</p>}
+
+              <button type="submit" className="btn-primary btn-full">Створити і додати в поставку</button>
+            </form>
+          )}
+
+          {search.trim() && !showNewForm && (
             displayed.length === 0
-              ? <p className="empty-hint">Нічого не знайдено</p>
+              ? (
+                <div>
+                  <p className="empty-hint">Нічого не знайдено</p>
+                  <button className="btn-ghost" onClick={openNewForm}>
+                    + Створити товар «{search.trim()}»
+                  </button>
+                </div>
+              )
               : (
                 <ul className="manage-list">
                   {displayed.map(p => (
