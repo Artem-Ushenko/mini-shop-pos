@@ -15,7 +15,3 @@ Thumbs.db
 # Пароль входу в касу та інші локальні секрети збірки
 .env
 password.txt
-
-# Локальний кеш Firebase CLI (деплой-хеші, лог помилок)
-.firebase/
-firebase-debug.log
