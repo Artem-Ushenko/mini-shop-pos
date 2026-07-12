@@ -8,7 +8,21 @@ const DB_VERSION = 3
 const MANUAL_ID_START = 900_000
 
 // Дозволені причини сторно — чек без причини скасувати не можна.
-export const CANCEL_REASONS = ['помилка', 'повернення']
+// «виправлення» — службова причина правки чека: сторно + перебиття новим чеком.
+export const CANCEL_REASONS = ['помилка', 'повернення', 'виправлення']
+
+// Способи оплати чека. Старі чеки без paymentMethod рахуються готівкою.
+export const PAYMENT_METHODS = ['готівка', 'картка']
+
+// ЄДИНЕ місце розрахунку сум чека — екран оплати і createReceipt зобов'язані
+// використовувати саме цю функцію, інакше сума на екрані та в чеку розійдуться
+// на 1 ₴ через різний порядок округлення (реальний баг: 105 ₴ зі знижкою 10%).
+// Правило: знижка округлюється до цілої ₴, разом = сума − знижка.
+export function calcReceiptTotals(items, discount = 0) {
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0)
+  const discountAmt = Math.round(subtotal * discount / 100)
+  return { subtotal, discountAmt, total: subtotal - discountAmt }
+}
 
 let _db = null
 
@@ -44,13 +58,38 @@ function createMissingStores(db) {
   }
 }
 
+// Обробники подій багатовкладкової роботи (передаються в кожен openDB):
+// - blocked: апгрейд чекає на іншу вкладку зі старою версією — без обробника
+//   каса зависла б на «Завантаження…» назавжди; краще чесна помилка.
+// - blocking: інша вкладка хоче апгрейд, а ми тримаємо з'єднання — відпускаємо
+//   його і перезавантажуємось на новий код.
+function multiTabHandlers(reject) {
+  return {
+    blocked() {
+      reject(new Error('База зайнята іншою вкладкою каси — закрийте інші вкладки і оновіть сторінку'))
+    },
+    blocking() {
+      _db?.close()
+      _db = null
+      if (typeof window !== 'undefined') window.location.reload()
+    },
+  }
+}
+
+function openWithHandlers(version) {
+  return new Promise((resolve, reject) => {
+    openDB(DB_NAME, version, { upgrade: createMissingStores, ...multiTabHandlers(reject) })
+      .then(resolve, reject)
+  })
+}
+
 export async function initDB() {
   if (_db) return
-  let db = await openDB(DB_NAME, DB_VERSION, { upgrade: createMissingStores })
+  let db = await openWithHandlers(DB_VERSION)
     .catch(err => {
       // БД уже на вищій версії, ніж знає код (напр. після самовідновлення
       // нижче) — відкриваємо як є, сховища перевіримо окремо.
-      if (err.name === 'VersionError') return openDB(DB_NAME)
+      if (err.name === 'VersionError') return openWithHandlers(undefined)
       throw err
     })
 
@@ -61,7 +100,7 @@ export async function initDB() {
   if (REQUIRED_STORES.some(s => !db.objectStoreNames.contains(s))) {
     const healVersion = db.version + 1
     db.close()
-    db = await openDB(DB_NAME, healVersion, { upgrade: createMissingStores })
+    db = await openWithHandlers(healVersion)
   }
 
   _db = db
@@ -118,9 +157,12 @@ export async function getCurrentShift() {
 // Відкриває зміну. Якщо існує незакрита стара зміна (забули закрити) —
 // спочатку закриває її від імені системи. Повертає { shift, autoClosed },
 // де autoClosed — автозакрита стара зміна або null.
-export async function openShift(cashier) {
+// openingCash — розмінна готівка в шухляді на початку зміни (₴).
+export async function openShift(cashier, openingCash = 0) {
   const name = (cashier ?? '').trim()
   if (!name) throw new Error('Вкажіть касира, який відкриває зміну')
+  const opening = Math.round(Number(openingCash) || 0)
+  if (opening < 0) throw new Error('Розмінна готівка не може бути від\'ємною')
 
   const config = await getConfig()
   if (!config?.locationName) throw new Error('Каса не налаштована — спочатку вкажіть точку продажу')
@@ -152,6 +194,11 @@ export async function openShift(cashier) {
     receiptCount: 0,
     stornoCount: 0,
     total: 0,
+    openingCash: opening, // розмінна готівка на початку зміни
+    cashTotal: 0,         // виторг готівкою
+    cardTotal: 0,         // виторг карткою
+    countedCash: null,    // готівка, порахована касиром при закритті
+    expectedCash: null,   // очікувана готівка на момент закриття
   }
   await store.add(shift)
   await tx.done
@@ -159,7 +206,10 @@ export async function openShift(cashier) {
   return { shift, autoClosed }
 }
 
-export async function closeShiftLocal(closedBy = 'cashier') {
+// countedCash — готівка, яку касир фактично порахував у шухляді при закритті
+// (null — перерахунок не проводився, напр. автозакриття системою).
+// expectedCash фіксується в записі зміни, щоб Δ можна було відтворити пізніше.
+export async function closeShiftLocal(closedBy = 'cashier', countedCash = null) {
   const tx = db().transaction('shifts', 'readwrite')
   const store = tx.objectStore('shifts')
   const open = (await store.getAll()).find(s => !s.closedAt)
@@ -169,6 +219,8 @@ export async function closeShiftLocal(closedBy = 'cashier') {
   }
   open.closedAt = Date.now()
   open.closedBy = closedBy
+  open.expectedCash = (open.openingCash ?? 0) + (open.cashTotal ?? 0)
+  open.countedCash = countedCash === null ? null : Math.round(Number(countedCash) || 0)
   await store.put(open)
   await tx.done
   return open
@@ -197,12 +249,20 @@ export async function searchProducts(query) {
   return all.filter(p => p.name.toLowerCase().includes(q))
 }
 
+// Уся грошова математика каси працює в цілих ₴ — ціни округлюються на вході,
+// щоб дробове значення з форми чи CSV не рознесло копійки по чеках.
 export async function createProduct({ cat, name, price, stock, cost = 0 }) {
   const all = await db().getAll('products')
   const manualIds = all.map(p => p.id).filter(id => id >= MANUAL_ID_START)
   const id = manualIds.length ? Math.max(...manualIds) + 1 : MANUAL_ID_START
   const now = Date.now()
-  const product = { id, cat, name, price, cost, stock, updatedAt: now, priceUpdatedAt: now }
+  const product = {
+    id, cat, name,
+    price: Math.round(Number(price) || 0),
+    cost: Math.round(Number(cost) || 0),
+    stock: Math.round(Number(stock) || 0),
+    updatedAt: now, priceUpdatedAt: now,
+  }
   await db().put('products', product)
   return product
 }
@@ -213,12 +273,37 @@ export async function createProduct({ cat, name, price, stock, cost = 0 }) {
 // підправив ціну» — і не втратити ручну правку при наступному імпорті
 // catalog.csv, але й не заблокувати оновлення ціни з файлу для товарів,
 // які просто активно продаються.
+// Ручна зміна залишку (не через поставку і не через продаж) лишає слід
+// у журналі deliveries записом type: 'adjustment' з дельтою — інакше після неї
+// неможливо відповісти, звідки взявся чи зник товар.
 export async function updateProduct(id, { name, price, stock, cost = 0 }) {
-  const product = await db().get('products', id)
+  const tx = db().transaction(['products', 'deliveries'], 'readwrite')
+  const prodStore = tx.objectStore('products')
+  const product = await prodStore.get(id)
   if (!product) throw new Error(`Товар ${id} не знайдено`)
+
   const now = Date.now()
-  const updated = { ...product, name, price, cost, stock, updatedAt: now, priceUpdatedAt: now }
-  await db().put('products', updated)
+  const newStock = Math.round(Number(stock) || 0)
+  const updated = {
+    ...product, name,
+    price: Math.round(Number(price) || 0),
+    cost: Math.round(Number(cost) || 0),
+    stock: newStock,
+    updatedAt: now, priceUpdatedAt: now,
+  }
+  await prodStore.put(updated)
+
+  const delta = newStock - product.stock
+  if (delta !== 0) {
+    await tx.objectStore('deliveries').add({
+      time: now,
+      type: 'adjustment',
+      items: [{ id, name: updated.name, qty: delta }],
+      note: 'Коригування залишку (Облік товарів)',
+    })
+  }
+
+  await tx.done
   return updated
 }
 
@@ -232,7 +317,16 @@ export async function deleteProduct(id) {
 // receipt.no — внутрішній автоінкрементний ключ (стабільний і унікальний
 // назавжди), receipt.shiftNo — людський номер за зміну («М-1», «З-7»),
 // який щозміни починається з 1, тому ключем бути не може.
-export async function createReceipt(items, discount = 0) {
+// opts.paymentMethod — з PAYMENT_METHODS (дефолт «готівка»).
+// opts.allowOversell — дозволити продаж у мінус (залишок стане від'ємним):
+// касир уже підтвердив у UI, що товар фізично є, а облік відстає.
+// Без прапорця нестача залишку — помилка з code: 'INSUFFICIENT_STOCK'.
+export async function createReceipt(items, discount = 0, opts = {}) {
+  const { paymentMethod = 'готівка', allowOversell = false } = opts
+  if (!PAYMENT_METHODS.includes(paymentMethod)) {
+    throw new Error(`Невірний спосіб оплати: ${PAYMENT_METHODS.map(m => `«${m}»`).join(' або ')}`)
+  }
+
   const tx = db().transaction(['products', 'receipts', 'shifts'], 'readwrite')
   const prodStore = tx.objectStore('products')
   const recStore = tx.objectStore('receipts')
@@ -249,19 +343,22 @@ export async function createReceipt(items, discount = 0) {
   for (const item of items) {
     const product = await prodStore.get(item.id)
     if (!product) throw new Error(`Товар ${item.id} не знайдено`)
-    if (product.stock < item.qty) {
-      throw new Error(`Недостатньо залишку для "${product.name}": є ${product.stock}, потрібно ${item.qty}`)
+    if (!allowOversell && product.stock < item.qty) {
+      const err = new Error(`Недостатньо залишку для "${product.name}": є ${product.stock}, потрібно ${item.qty}`)
+      err.code = 'INSUFFICIENT_STOCK'
+      throw err
     }
     product.stock -= item.qty
     product.updatedAt = Date.now()
     await prodStore.put(product)
   }
 
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0)
-  const total = Math.round(subtotal * (1 - discount / 100))
+  const { subtotal, total } = calcReceiptTotals(items, discount)
 
   shift.receiptCount += 1
   shift.total += total
+  if (paymentMethod === 'картка') shift.cardTotal = (shift.cardTotal ?? 0) + total
+  else shift.cashTotal = (shift.cashTotal ?? 0) + total
   await shiftStore.put(shift)
 
   const receipt = {
@@ -275,6 +372,7 @@ export async function createReceipt(items, discount = 0) {
     subtotal,
     discount,
     total,
+    paymentMethod,
     cancelled: false,
     cancelReason: null,
   }
@@ -321,6 +419,12 @@ export async function cancelReceipt(no, reason) {
     if (shift) {
       shift.stornoCount += 1
       shift.total -= receipt.total
+      // Розбивка за способом оплати теж має відобразити повернення грошей.
+      if ((receipt.paymentMethod ?? 'готівка') === 'картка') {
+        shift.cardTotal = (shift.cardTotal ?? 0) - receipt.total
+      } else {
+        shift.cashTotal = (shift.cashTotal ?? 0) - receipt.total
+      }
       await shiftStore.put(shift)
     }
   }
@@ -363,6 +467,7 @@ export async function receiveDelivery(items, note = '') {
 
   const delivery = {
     time: Date.now(),
+    type: 'delivery', // старі записи без type теж вважаються поставками
     items: items.map(i => ({ id: i.id, name: i.name, qty: i.qty })),
     note: (note ?? '').trim(),
   }

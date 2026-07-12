@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getCategories, getProducts, getCurrentShift, closeShiftLocal } from '../db.js'
+import { trySendSnapshot, formatShiftCloseReport } from '../cloud.js'
 
 export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onCheckout, onReceipts, onManage, onStats, onBackup, onDeliveries }) {
   const [categories, setCategories] = useState([])
@@ -9,10 +10,12 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
   // Підсумок зміни для модалки закриття — читається з БД у момент відкриття
   // модалки, бо лічильники зміни живуть у IndexedDB, а не в пропсі shift.
   const [closingShift, setClosingShift] = useState(null)
+  const [countedCash, setCountedCash] = useState('')
   const [closeError, setCloseError] = useState(null)
 
   async function handleCloseShiftClick() {
     setCloseError(null)
+    setCountedCash('')
     try {
       setClosingShift(await getCurrentShift())
     } catch (e) {
@@ -22,13 +25,23 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
 
   async function handleConfirmClose() {
     try {
-      await closeShiftLocal()
+      const counted = countedCash === '' ? null : Number(countedCash)
+      const closed = await closeShiftLocal('cashier', counted)
+      // Хмарний снапшот + Telegram-звіт — після закриття, у фоні: каса не
+      // чекає хмару, невдача ставить прапорець/чергу і повториться при мережі.
+      trySendSnapshot(closed ? formatShiftCloseReport(closed) : undefined)
       onShiftClosed()
     } catch (e) {
       setClosingShift(null)
       setCloseError(e.message)
     }
   }
+
+  // Очікувана готівка в шухляді: розмінна на початку + виторг готівкою.
+  const expectedCash = closingShift
+    ? (closingShift.openingCash ?? 0) + (closingShift.cashTotal ?? 0)
+    : 0
+  const cashDelta = countedCash === '' ? null : Number(countedCash) - expectedCash
 
   async function loadCatalog() {
     const [cats, prods] = await Promise.all([getCategories(), getProducts()])
@@ -50,15 +63,25 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
       result = result.filter(p => p.cat === activeCat)
     }
     // Товари в наявності — спершу, немає в наявності — в кінці списку
-    return [...result].sort((a, b) => (a.stock === 0) - (b.stock === 0))
+    return [...result].sort((a, b) => (a.stock <= 0) - (b.stock <= 0))
   }, [catalog, search, activeCat])
 
   // Скільки одиниць товару вже в кошику
   const inCartQty = (id) => cart.find(i => i.id === id)?.qty ?? 0
 
+  // Товар фізично може бути в руках покупця, коли облік каже «нема»
+  // (не оприбуткували поставку). Жорстка заборона штовхає продавати повз
+  // касу — тому продаж понад залишок дозволений, але з явним підтвердженням.
+  function confirmOversell(product, wantQty) {
+    return window.confirm(
+      `«${product.name}»: залишок ${product.stock} шт, у кошику буде ${wantQty}.\n` +
+      'Продати понад залишок? Залишок піде в мінус — не забудьте оприбуткувати поставку.'
+    )
+  }
+
   function addToCart(product) {
     const alreadyIn = inCartQty(product.id)
-    if (alreadyIn >= product.stock) return
+    if (alreadyIn + 1 > product.stock && !confirmOversell(product, alreadyIn + 1)) return
     setCart(prev => {
       const exists = prev.find(i => i.id === product.id)
       if (exists) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
@@ -67,13 +90,13 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
   }
 
   function updateQty(id, delta) {
+    const item = cart.find(i => i.id === id)
+    if (!item) return
+    const newQty = item.qty + delta
+    const product = catalog.find(p => p.id === id)
+    if (delta > 0 && product && newQty > product.stock && !confirmOversell(product, newQty)) return
     setCart(prev => {
-      const item = prev.find(i => i.id === id)
-      if (!item) return prev
-      const newQty = item.qty + delta
       if (newQty <= 0) return prev.filter(i => i.id !== id)
-      const product = catalog.find(p => p.id === id)
-      if (product && newQty > product.stock) return prev
       return prev.map(i => i.id === id ? { ...i, qty: newQty } : i)
     })
   }
@@ -116,7 +139,32 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
                 <li><span>Чеків</span><strong>{closingShift.receiptCount}</strong></li>
                 <li><span>Сторно</span><strong>{closingShift.stornoCount}</strong></li>
                 <li><span>Виторг</span><strong>{closingShift.total.toLocaleString('uk-UA')} ₴</strong></li>
+                <li><span>· готівкою</span><strong>{(closingShift.cashTotal ?? 0).toLocaleString('uk-UA')} ₴</strong></li>
+                <li><span>· карткою</span><strong>{(closingShift.cardTotal ?? 0).toLocaleString('uk-UA')} ₴</strong></li>
+                <li><span>Розмінна на початку</span><strong>{(closingShift.openingCash ?? 0).toLocaleString('uk-UA')} ₴</strong></li>
+                <li><span>Має бути в касі</span><strong>{expectedCash.toLocaleString('uk-UA')} ₴</strong></li>
               </ul>
+
+              <div className="cash-count-row">
+                <label htmlFor="counted-cash">Порахована готівка</label>
+                <input
+                  id="counted-cash"
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  placeholder="₴"
+                  value={countedCash}
+                  onChange={e => setCountedCash(e.target.value)}
+                />
+              </div>
+              {cashDelta !== null && (
+                <p className={`cash-delta ${cashDelta === 0 ? 'ok' : 'bad'}`} style={{ textAlign: 'right' }}>
+                  {cashDelta === 0
+                    ? '✓ Каса зійшлася'
+                    : `Δ ${cashDelta > 0 ? '+' : ''}${cashDelta.toLocaleString('uk-UA')} ₴ ${cashDelta > 0 ? '(надлишок)' : '(недостача)'}`}
+                </p>
+              )}
+
               <div className="modal-actions">
                 <button className="btn-danger" onClick={handleConfirmClose}>Закрити зміну</button>
                 <button className="btn-ghost" onClick={() => setClosingShift(null)}>Скасувати</button>
@@ -175,24 +223,27 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
               <tbody>
                 {displayed.map(product => {
                   const qty = inCartQty(product.id)
-                  const outOfStock = product.stock === 0
+                  // Немає в наявності — приглушений рядок, але клік працює:
+                  // addToCart спитає підтвердження продажу понад залишок.
+                  const outOfStock = product.stock <= 0
                   return (
                     <tr
                       key={product.id}
                       className={`product-row${outOfStock ? ' disabled' : ''}${qty > 0 ? ' in-cart' : ''}`}
-                      onClick={() => !outOfStock && addToCart(product)}
+                      onClick={() => addToCart(product)}
                     >
                       <td className="product-name">{product.name}</td>
                       <td className="product-price">{product.price.toLocaleString('uk-UA')} ₴</td>
                       <td className="product-stock">
-                        {outOfStock ? 'Немає в наявності' : `${product.stock} шт`}
+                        {outOfStock
+                          ? (product.stock < 0 ? `${product.stock} шт (мінус!)` : 'Немає в наявності')
+                          : `${product.stock} шт`}
                         {qty > 0 && ` · у кошику: ${qty}`}
                       </td>
                       <td className="product-row-action">
                         <button
                           className="btn-add-row"
                           onClick={e => { e.stopPropagation(); addToCart(product) }}
-                          disabled={outOfStock}
                         >
                           +
                         </button>

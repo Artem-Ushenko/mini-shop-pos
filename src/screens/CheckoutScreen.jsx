@@ -1,25 +1,27 @@
 import { useState } from 'react'
-import { createReceipt } from '../db.js'
+import { createReceipt, calcReceiptTotals } from '../db.js'
 
 export default function CheckoutScreen({ cart, onConfirm, onBack }) {
   const [discount, setDiscount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0)
-  const discountAmt = Math.round(subtotal * discount / 100)
-  const total = subtotal - discountAmt
+  // Та сама функція, що й у createReceipt — суми на екрані та в чеку
+  // збігаються завжди (окреме округлення тут уже давало розбіжність в 1 ₴).
+  const { subtotal, discountAmt, total } = calcReceiptTotals(cart, discount)
 
   function handleDiscountChange(e) {
     const v = Math.min(100, Math.max(0, Number(e.target.value) || 0))
     setDiscount(v)
   }
 
-  async function handleConfirm() {
+  // Продаж понад залишок уже підтверджено касиром у кошику (CashierScreen),
+  // тому allowOversell — щоб транзакція не відбила той самий випадок удруге.
+  async function handleConfirm(paymentMethod) {
     setLoading(true)
     setError(null)
     try {
-      await createReceipt(cart, discount)
+      await createReceipt(cart, discount, { paymentMethod, allowOversell: true })
       onConfirm()
     } catch (e) {
       setError(e.message)
@@ -85,13 +87,22 @@ export default function CheckoutScreen({ cart, onConfirm, onBack }) {
 
         {error && <p className="error-msg">{error}</p>}
 
-        <button
-          className="btn-success btn-lg btn-full"
-          onClick={handleConfirm}
-          disabled={loading || cart.length === 0}
-        >
-          {loading ? 'Проводимо…' : `Прийняти оплату  ${total.toLocaleString('uk-UA')} ₴`}
-        </button>
+        <div className="payment-buttons">
+          <button
+            className="btn-success btn-lg"
+            onClick={() => handleConfirm('готівка')}
+            disabled={loading || cart.length === 0}
+          >
+            {loading ? 'Проводимо…' : `💵 Готівка · ${total.toLocaleString('uk-UA')} ₴`}
+          </button>
+          <button
+            className="btn-primary btn-lg"
+            onClick={() => handleConfirm('картка')}
+            disabled={loading || cart.length === 0}
+          >
+            {loading ? 'Проводимо…' : `💳 Картка · ${total.toLocaleString('uk-UA')} ₴`}
+          </button>
+        </div>
 
       </div>
     </div>

@@ -1,8 +1,14 @@
 import { getProducts, putCategory, putProduct } from './db.js'
 
+// U+FEFF (BOM) на початку файлу — Excel зберігає UTF-8 саме так.
+// Порівняння за кодом символа, бо літеральний BOM у регекспі невидимий оку.
+function stripBOM(text) {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text
+}
+
 // ── CSV-парсер (підтримує лапки, BOM, \r\n) ────────────────────────────────
 function parseCSV(text) {
-  const src = text.replace(/^﻿/, '')
+  const src = stripBOM(text)
   const rows = []
   let row = [], field = '', inQ = false
 
@@ -47,7 +53,7 @@ function extractBlock(lines, headerPrefix, nextHeaderPrefix) {
 }
 
 export function parseCatalogCSV(text) {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/)
+  const lines = stripBOM(text).split(/\r?\n/)
 
   const catLines  = extractBlock(lines, CATEGORY_HEADER, PRODUCT_HEADER)
   const prodLines = extractBlock(lines, PRODUCT_HEADER, null)

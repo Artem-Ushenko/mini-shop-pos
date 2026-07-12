@@ -75,7 +75,7 @@ function slugify(str) {
 
 // ── CSV-парсер (підтримує лапки, BOM, \r\n) ────────────────────────────────────
 function parseCSV(text) {
-  const src = text.replace(/^﻿/, '')  // видалити BOM
+  const src = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text  // видалити BOM (U+FEFF)
   const rows = []
   let row = [], field = '', inQ = false
 

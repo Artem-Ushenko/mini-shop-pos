@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { openShift, setConfig } from '../db.js'
+import { trySendReport, formatShiftOpenReport, formatShiftCloseReport } from '../cloud.js'
 
 // Без відкритої зміни продаж недоступний: цей екран стоїть між запуском каси
 // і головним екраном. Журнал, облік, статистика і бекапи доступні й без зміни.
@@ -8,12 +9,19 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
   const [opening, setOpening] = useState(false)
   const [showAddCashier, setShowAddCashier] = useState(false)
   const [newName, setNewName] = useState('')
+  const [openingCash, setOpeningCash] = useState('')
 
   async function handleOpen(cashier) {
     setOpening(true)
     setError(null)
     try {
-      const { shift, autoClosed } = await openShift(cashier)
+      const { shift, autoClosed } = await openShift(cashier, Number(openingCash) || 0)
+      // Telegram-звіти у фоні, послідовно (щоб 🔴 автозакриття прийшло перед 🟢):
+      // каса не чекає хмару, невдача ставить звіт у чергу на повтор.
+      ;(async () => {
+        if (autoClosed) await trySendReport(formatShiftCloseReport(autoClosed))
+        await trySendReport(formatShiftOpenReport(shift))
+      })()
       onOpened(shift, autoClosed)
     } catch (e) {
       setError(e.message)
@@ -43,6 +51,19 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
         <p className="gate-hint">
           Точка: {config.locationName}
         </p>
+
+        <div className="cash-count-row" style={{ marginTop: 0 }}>
+          <label htmlFor="opening-cash">Розмінна готівка в касі</label>
+          <input
+            id="opening-cash"
+            type="number"
+            inputMode="numeric"
+            min="0"
+            placeholder="0 ₴"
+            value={openingCash}
+            onChange={e => setOpeningCash(e.target.value)}
+          />
+        </div>
 
         <h2 className="setup-subtitle">Хто відкриває зміну?</h2>
         <div className="cashier-pick-list">

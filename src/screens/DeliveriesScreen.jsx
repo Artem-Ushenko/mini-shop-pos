@@ -312,13 +312,15 @@ export default function DeliveriesScreen({ onBack }) {
                   {group.items.map(d => (
                     <li key={d.id} className="receipt-card card">
                       <div className="receipt-head">
-                        <span className="receipt-no">Поставка №{d.id}</span>
+                        <span className="receipt-no">
+                          {d.type === 'adjustment' ? `✏️ Коригування №${d.id}` : `Поставка №${d.id}`}
+                        </span>
                         <span className="receipt-time">{fmtDate(d.time)} {fmtTime(d.time)}</span>
                         {d.note && <span className="receipt-cashier">{d.note}</span>}
                       </div>
                       <ul className="receipt-items">
                         {d.items.map((item, i) => (
-                          <li key={i}>{item.name} × {item.qty} шт</li>
+                          <li key={i}>{item.name} × {item.qty > 0 ? `+${item.qty}` : item.qty} шт</li>
                         ))}
                       </ul>
                     </li>

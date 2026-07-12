@@ -44,7 +44,7 @@ export default function ManageCatalogScreen({ onBack }) {
     }
     if (catFilter) result = result.filter(p => p.cat === catFilter)
     if (availFilter === 'in') result = result.filter(p => p.stock > 0)
-    else if (availFilter === 'out') result = result.filter(p => p.stock === 0)
+    else if (availFilter === 'out') result = result.filter(p => p.stock <= 0)
     else if (availFilter === 'low') {
       // Найтерміновіші (менший залишок) — зверху списку.
       result = result.filter(p => p.stock <= LOW_STOCK_THRESHOLD).sort((a, b) => a.stock - b.stock)

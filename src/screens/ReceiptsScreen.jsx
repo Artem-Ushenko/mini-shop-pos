@@ -36,10 +36,14 @@ function groupByDay(receipts) {
   return groups
 }
 
-export default function ReceiptsScreen({ onBack }) {
+// onEditReceipt передається лише при відкритій зміні: «правка» чека — це
+// сторно з причиною «виправлення» + перенесення позицій у кошик, щоб касир
+// додав/прибрав потрібне і провів новий чек. Сам чек у журналі незмінний.
+export default function ReceiptsScreen({ onBack, onEditReceipt }) {
   const [receipts, setReceipts] = useState([])
   const [dayTotal, setDayTotal] = useState({ sum: 0, count: 0 })
   const [confirmingNo, setConfirmingNo] = useState(null)
+  const [editingNo, setEditingNo] = useState(null)
   const [error, setError] = useState(null)
 
   async function load() {
@@ -59,6 +63,17 @@ export default function ReceiptsScreen({ onBack }) {
     } catch (e) {
       setError(e.message)
       setConfirmingNo(null)
+    }
+  }
+
+  async function handleEdit(receipt) {
+    setError(null)
+    try {
+      await cancelReceipt(receipt.no, 'виправлення')
+      onEditReceipt(receipt)
+    } catch (e) {
+      setError(e.message)
+      setEditingNo(null)
     }
   }
 
@@ -99,6 +114,11 @@ export default function ReceiptsScreen({ onBack }) {
                       <span className="receipt-no">{receiptLabel(r)}</span>
                       <span className="receipt-time">{fmtDate(r.time)} {fmtTime(r.time)}</span>
                       {r.cashier && <span className="receipt-cashier">👤 {r.cashier}</span>}
+                      {r.paymentMethod && (
+                        <span className="receipt-cashier">
+                          {r.paymentMethod === 'картка' ? '💳 картка' : '💵 готівка'}
+                        </span>
+                      )}
                       {r.cancelled && (
                         <span className="badge-cancelled">
                           СТОРНО{r.cancelReason ? ` · ${r.cancelReason}` : ''}
@@ -120,11 +140,39 @@ export default function ReceiptsScreen({ onBack }) {
                       )}
                       <strong>{r.total.toLocaleString('uk-UA')} ₴</strong>
 
-                      {!r.cancelled && confirmingNo !== r.no && (
+                      {!r.cancelled && confirmingNo !== r.no && editingNo !== r.no && onEditReceipt && (
+                        <button
+                          className="btn-ghost-sm"
+                          onClick={() => { setConfirmingNo(null); setEditingNo(r.no) }}
+                        >
+                          ✏️ Виправити
+                        </button>
+                      )}
+
+                      {!r.cancelled && editingNo === r.no && (
+                        <div className="cancel-confirm">
+                          <span>
+                            Чек буде сторновано (виправлення), позиції перейдуть у кошик —
+                            відредагуйте і проведіть новий чек.
+                          </span>
+                          <button
+                            className="btn-primary"
+                            style={{ minHeight: 36, padding: '6px 14px' }}
+                            onClick={() => handleEdit(r)}
+                          >
+                            Виправити
+                          </button>
+                          <button className="btn-ghost-sm" onClick={() => setEditingNo(null)}>
+                            Скасувати
+                          </button>
+                        </div>
+                      )}
+
+                      {!r.cancelled && confirmingNo !== r.no && editingNo !== r.no && (
                         <button
                           className="btn-ghost-sm"
                           style={{ color: 'var(--c-danger)' }}
-                          onClick={() => setConfirmingNo(r.no)}
+                          onClick={() => { setEditingNo(null); setConfirmingNo(r.no) }}
                         >
                           Сторно
                         </button>

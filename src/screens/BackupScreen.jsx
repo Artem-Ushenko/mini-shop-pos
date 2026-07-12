@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react'
-import { exportBackup, importBackup } from '../db.js'
+import { useState, useEffect, useRef } from 'react'
+import { exportBackup, importBackup, getConfig, setConfig } from '../db.js'
+import { sendSnapshot, getSnapshotStatus } from '../cloud.js'
 
 function fmtDateTime(ts) {
   return new Date(ts).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' })
@@ -10,6 +11,30 @@ export default function BackupScreen({ onBack }) {
   const [pendingRestore, setPendingRestore] = useState(null)
   const [restoring, setRestoring] = useState(false)
   const backupFileInputRef = useRef(null)
+
+  // Хмарні снапшоти (Google Drive через Apps Script-проксі)
+  const [config, setConfigState] = useState(null)
+  const [snapUrl, setSnapUrl] = useState('')
+  const [snapToken, setSnapToken] = useState('')
+  const [snapMsg, setSnapMsg] = useState(null)
+  const [snapErr, setSnapErr] = useState(null)
+  const [snapshotting, setSnapshotting] = useState(false)
+  const [snapStatus, setSnapStatus] = useState(getSnapshotStatus())
+
+  // best effort-захист IndexedDB від витіснення браузером — власник має
+  // бачити, якщо браузер його НЕ гарантує (дані можуть зникнути під тиском місця).
+  const [persisted, setPersisted] = useState(null)
+
+  useEffect(() => {
+    getConfig().then(cfg => {
+      setConfigState(cfg)
+      setSnapUrl(cfg?.snapshot?.url ?? '')
+      setSnapToken(cfg?.snapshot?.token ?? '')
+    })
+    if (navigator.storage?.persisted) {
+      navigator.storage.persisted().then(setPersisted).catch(() => {})
+    }
+  }, [])
 
   async function handleExportBackup() {
     setBackupError(null)
@@ -54,6 +79,36 @@ export default function BackupScreen({ onBack }) {
       setBackupError(err.message)
       setRestoring(false)
       setPendingRestore(null)
+    }
+  }
+
+  async function handleSaveSnapshotSettings() {
+    setSnapErr(null)
+    setSnapMsg(null)
+    try {
+      const updated = await setConfig({
+        ...config,
+        snapshot: { url: snapUrl.trim(), token: snapToken.trim() },
+      })
+      setConfigState(updated)
+      setSnapMsg('Налаштування збережено')
+    } catch (err) {
+      setSnapErr(err.message)
+    }
+  }
+
+  async function handleSendNow() {
+    setSnapErr(null)
+    setSnapMsg(null)
+    setSnapshotting(true)
+    try {
+      const res = await sendSnapshot()
+      setSnapMsg(`Снапшот на Drive: ${res.file}`)
+    } catch (err) {
+      setSnapErr(err.message)
+    } finally {
+      setSnapshotting(false)
+      setSnapStatus(getSnapshotStatus())
     }
   }
 
@@ -104,6 +159,61 @@ export default function BackupScreen({ onBack }) {
               </button>
             </div>
           )}
+        </div>
+
+        <div className="card manage-backup" style={{ marginTop: 16 }}>
+          <h3 style={{ marginBottom: 8 }}>☁️ Хмарні снапшоти (Google Drive) + Telegram-звіти</h3>
+          <p className="backup-hint">
+            Повний знімок бази автоматично летить у папку вашого Google Drive при
+            кожному закритті зміни (офлайн — досилається при появі мережі).
+            Якщо на проксі задано Telegram-бота (BOT_TOKEN + CHAT_ID) — відкриття
+            і закриття зміни додатково шлють звіт у Telegram.
+            Налаштування проксі — див. файл <code>gerkules-snapshot-proxy.gs</code>.
+          </p>
+
+          <div className="manage-form-row">
+            <input
+              type="url"
+              placeholder="URL веб-додатку Apps Script (…/exec)"
+              value={snapUrl}
+              onChange={e => setSnapUrl(e.target.value)}
+            />
+          </div>
+          <div className="manage-form-row">
+            <input
+              type="password"
+              placeholder="Секретний токен (SECRET_TOKEN зі Script Properties)"
+              value={snapToken}
+              onChange={e => setSnapToken(e.target.value)}
+            />
+          </div>
+
+          <div className="manage-backup-actions">
+            <button className="btn-ghost" onClick={handleSaveSnapshotSettings} disabled={!config}>
+              Зберегти налаштування
+            </button>
+            <button
+              className="btn-primary"
+              onClick={handleSendNow}
+              disabled={snapshotting || !snapUrl.trim() || !snapToken.trim()}
+            >
+              {snapshotting ? 'Надсилаємо…' : 'Надіслати снапшот зараз'}
+            </button>
+          </div>
+
+          {snapMsg && <p className="stat-value green" style={{ fontSize: '0.9rem', marginTop: 8 }}>{snapMsg}</p>}
+          {snapErr && <p className="error-msg" style={{ marginTop: 8 }}>{snapErr}</p>}
+
+          <p className="backup-hint" style={{ marginTop: 10 }}>
+            Останній успішний снапшот: {snapStatus.lastOkAt ? fmtDateTime(snapStatus.lastOkAt) : 'ще не було'}
+            {snapStatus.pending && ' · ⏳ є ненадісланий — повториться при появі мережі'}
+          </p>
+          <p className="backup-hint">
+            Захист сховища браузером:{' '}
+            {persisted === null ? 'невідомо' : persisted
+              ? '✅ увімкнено (браузер не витіснить дані)'
+              : '⚠️ не гарантовано — браузер може стерти дані під тиском місця, робіть бекапи'}
+          </p>
         </div>
 
       </div>

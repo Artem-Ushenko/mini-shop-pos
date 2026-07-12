@@ -197,6 +197,22 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
+/* Перерахунок готівки в модалці закриття зміни */
+.cash-count-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 12px;
+}
+.cash-count-row input {
+  width: 130px; text-align: right; font-size: 1.05rem; font-weight: 600;
+}
+.cash-delta { font-weight: 700; }
+.cash-delta.ok { color: var(--c-success); }
+.cash-delta.bad { color: var(--c-danger); }
+
+/* Кнопки способу оплати на екрані «До сплати» */
+.payment-buttons { display: flex; gap: 10px; }
+.payment-buttons button { flex: 1; }
+
 .autoclose-banner { background: var(--c-primary-dk); color: #dbeafe; }
 .banner-dismiss { margin-left: 12px; font-weight: 700; }
 
@@ -266,7 +282,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .product-table tbody .product-row:last-child { border-bottom: none; }
 .product-table tbody .product-row:hover:not(.disabled):not(.in-cart) { background: #eff6ff; }
 .product-table tbody .product-row.in-cart { background: #f0fdf4; }
-.product-table tbody .product-row.disabled { opacity: 0.4; cursor: not-allowed; }
+/* Немає в наявності: приглушений, але клікабельний — продаж у мінус з підтвердженням */
+.product-table tbody .product-row.disabled { opacity: 0.4; }
 .product-table td { padding: 12px 14px; }
 
 .product-name { font-size: 0.9rem; font-weight: 600; }

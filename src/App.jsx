@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { initDB, getConfig, getCurrentShift } from './db.js'
 import { importFromFile } from './sync.js'
+import { retryPending } from './cloud.js'
 import CashierScreen from './screens/CashierScreen.jsx'
 import CheckoutScreen from './screens/CheckoutScreen.jsx'
 import ReceiptsScreen from './screens/ReceiptsScreen.jsx'
@@ -28,15 +29,16 @@ function isToday(ts) {
 // при кожному запуску каси, без ручного імпорту.
 const CATALOG_URL = '/catalog.csv'
 
-// Задається через .env (VITE_APP_PASSWORD) лише для публічно розгорнутих
-// збірок (напр. Firebase Hosting) — локальна розробка без .env пароль не питає.
-const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD
+// У бандл потрапляє лише SHA-256-хеш пароля (.env → VITE_APP_PASSWORD_SHA256):
+// публічно розгорнутий JS читається будь-ким, відкритий текст там — дірка.
+// Локальна розробка без .env пароль не питає.
+const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD_SHA256
 const UNLOCK_KEY = 'kasa-unlocked'
 
-// Пароль адміністратора (.env → VITE_ADMIN_PASSWORD): без нього касир не
-// потрапить в «Облік товарів». Питається щоразу — розблокування не
+// Хеш пароля адміністратора (.env → VITE_ADMIN_PASSWORD_SHA256): без нього
+// касир не потрапить в «Облік товарів». Питається щоразу — розблокування не
 // запам'ятовується, бо каса лишається відкритою на пристрої всю зміну.
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD
+const ADMIN_PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_SHA256
 
 export default function App() {
   const [screen, setScreen]   = useState('cashier')
@@ -49,8 +51,9 @@ export default function App() {
   const [shift, setShift] = useState(null)
   const [autoClosedShift, setAutoClosedShift] = useState(null)
   const [adminUnlocked, setAdminUnlocked] = useState(false)
+  // Запам'ятовується сам хеш: зміна пароля в .env інвалідує старі розблокування.
   const [unlocked, setUnlocked] = useState(
-    !APP_PASSWORD || localStorage.getItem(UNLOCK_KEY) === '1'
+    !APP_PASSWORD_HASH || localStorage.getItem(UNLOCK_KEY) === APP_PASSWORD_HASH
   )
 
   useEffect(() => {
@@ -71,9 +74,10 @@ export default function App() {
         setDbError(e.message)
       }
     }
-    boot()
+    boot().then(() => retryPending())
 
-    const goOnline  = () => setIsOnline(true)
+    // При появі мережі — досилаємо відкладені Telegram-звіти і снапшот (якщо є).
+    const goOnline  = () => { setIsOnline(true); retryPending() }
     const goOffline = () => setIsOnline(false)
     window.addEventListener('online',  goOnline)
     window.addEventListener('offline', goOffline)
@@ -83,11 +87,18 @@ export default function App() {
     }
   }, [])
 
+  // «Правка» чека з журналу: чек уже сторновано (причина «виправлення»),
+  // позиції переносяться в кошик для редагування і повторного проведення.
+  function handleEditReceipt(receipt) {
+    setCart(receipt.items.map(i => ({ ...i })))
+    setScreen('cashier')
+  }
+
   if (!unlocked) {
     return (
       <PasswordGate
-        correctPassword={APP_PASSWORD}
-        onUnlock={() => { localStorage.setItem(UNLOCK_KEY, '1'); setUnlocked(true) }}
+        correctHash={APP_PASSWORD_HASH}
+        onUnlock={() => { localStorage.setItem(UNLOCK_KEY, APP_PASSWORD_HASH); setUnlocked(true) }}
       />
     )
   }
@@ -115,7 +126,7 @@ export default function App() {
     <>
       {!isOnline && (
         <div className="offline-banner">
-          Офлайн — дані зберігаються локально, синхронізація при відновленні мережі
+          Офлайн — каса працює, всі дані зберігаються на цьому пристрої
         </div>
       )}
       {syncError && (
@@ -136,17 +147,20 @@ export default function App() {
         />
       )}
       {screen === 'receipts' && (
-        <ReceiptsScreen onBack={() => setScreen('cashier')} />
+        <ReceiptsScreen
+          onBack={() => setScreen('cashier')}
+          onEditReceipt={activeShift ? handleEditReceipt : undefined}
+        />
       )}
-      {screen === 'manage' && ADMIN_PASSWORD && !adminUnlocked && (
+      {screen === 'manage' && ADMIN_PASSWORD_HASH && !adminUnlocked && (
         <PasswordGate
-          correctPassword={ADMIN_PASSWORD}
+          correctHash={ADMIN_PASSWORD_HASH}
           hint="Облік товарів доступний лише адміністратору"
           onUnlock={() => setAdminUnlocked(true)}
           onBack={() => setScreen('cashier')}
         />
       )}
-      {screen === 'manage' && (!ADMIN_PASSWORD || adminUnlocked) && (
+      {screen === 'manage' && (!ADMIN_PASSWORD_HASH || adminUnlocked) && (
         <ManageCatalogScreen
           onBack={() => { setAdminUnlocked(false); setScreen('cashier') }}
         />

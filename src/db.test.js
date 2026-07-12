@@ -27,6 +27,7 @@ import {
   getDeliveries,
   exportBackup,
   importBackup,
+  calcReceiptTotals,
 } from './db.js'
 
 beforeEach(async () => {
@@ -260,7 +261,7 @@ describe('getStats', () => {
   })
 
   it('рахує денну виручку, середній чек і скасовані окремо від усього часу', async () => {
-    const r1 = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }]) // total 90
+    await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }]) // total 90
     await createReceipt([{ id: 2, name: 'Американо', price: 50, qty: 1 }], 10) // total 45
     const r3 = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }]) // total 45
     await cancelReceipt(r3.no, 'помилка')
@@ -664,5 +665,144 @@ describe('initDB: самовідновлення бази', () => {
     await initDB() // openDB(…, 2) дасть VersionError → відкриється як є
 
     expect((await getConfig()).locationName).toBe('Магазин') // дані вціліли
+  })
+})
+
+describe('calcReceiptTotals — єдина грошова математика', () => {
+  it('знижка округлюється до цілої ₴, разом = сума − знижка', () => {
+    const items = [{ price: 105, qty: 1 }]
+    expect(calcReceiptTotals(items, 10)).toEqual({ subtotal: 105, discountAmt: 11, total: 94 })
+  })
+
+  it('createReceipt дає ту саму суму, що й розрахунок для екрана (кейс 105₴/10%)', async () => {
+    await receiveDelivery([{ id: 1, name: 'Еспресо', qty: 1 }]) // просто щоб stock вистачило
+    const items = [{ id: 1, name: 'Еспресо', price: 105, qty: 1 }]
+    const receipt = await createReceipt(items, 10)
+    expect(receipt.total).toBe(calcReceiptTotals(items, 10).total) // раніше: екран 94, чек 95
+    expect(receipt.total).toBe(94)
+  })
+
+  it('без знижки повертає суму без змін', () => {
+    expect(calcReceiptTotals([{ price: 45, qty: 2 }], 0)).toEqual({ subtotal: 90, discountAmt: 0, total: 90 })
+  })
+})
+
+describe('спосіб оплати', () => {
+  it('чек за замовчуванням — готівка, пише в shift.cashTotal', async () => {
+    const receipt = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }])
+    expect(receipt.paymentMethod).toBe('готівка')
+    const shift = await getCurrentShift()
+    expect(shift.cashTotal).toBe(45)
+    expect(shift.cardTotal).toBe(0)
+  })
+
+  it('чек карткою пише в shift.cardTotal', async () => {
+    await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }], 0, { paymentMethod: 'картка' })
+    const shift = await getCurrentShift()
+    expect(shift.cardTotal).toBe(90)
+    expect(shift.cashTotal).toBe(0)
+  })
+
+  it('відхиляє невідомий спосіб оплати', async () => {
+    await expect(
+      createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }], 0, { paymentMethod: 'крипта' })
+    ).rejects.toThrow('спосіб оплати')
+  })
+
+  it('сторно повертає суму в розбивку відповідного способу оплати', async () => {
+    const r = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }], 0, { paymentMethod: 'картка' })
+    await cancelReceipt(r.no, 'повернення')
+    const shift = await getCurrentShift()
+    expect(shift.cardTotal).toBe(0)
+  })
+})
+
+describe('касова дисципліна зміни', () => {
+  it('openShift фіксує розмінну готівку', async () => {
+    await closeShiftLocal()
+    const { shift } = await openShift('Ігор', 500)
+    expect(shift.openingCash).toBe(500)
+  })
+
+  it('закриття рахує очікувану готівку = розмінна + готівковий виторг', async () => {
+    await closeShiftLocal()
+    await openShift('Ігор', 200)
+    await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }]) // готівка 90
+    await createReceipt([{ id: 2, name: 'Американо', price: 50, qty: 1 }], 0, { paymentMethod: 'картка' })
+
+    const closed = await closeShiftLocal('cashier', 285)
+    expect(closed.expectedCash).toBe(290) // 200 + 90, картка не в шухляді
+    expect(closed.countedCash).toBe(285)  // недостача 5 ₴ видима як Δ
+  })
+
+  it('автозакриття без перерахунку лишає countedCash = null', async () => {
+    const closed = await closeShiftLocal('system')
+    expect(closed.countedCash).toBeNull()
+    expect(closed.expectedCash).toBe(0)
+  })
+})
+
+describe('продаж понад залишок (oversell)', () => {
+  it('без прапорця — помилка з code INSUFFICIENT_STOCK, stock не змінюється', async () => {
+    const err = await createReceipt([{ id: 2, name: 'Американо', price: 50, qty: 99 }]).catch(e => e)
+    expect(err.code).toBe('INSUFFICIENT_STOCK')
+    expect((await getProducts()).find(p => p.id === 2).stock).toBe(5)
+  })
+
+  it('з allowOversell продає в мінус', async () => {
+    const receipt = await createReceipt(
+      [{ id: 2, name: 'Американо', price: 50, qty: 7 }], 0, { allowOversell: true }
+    )
+    expect(receipt.total).toBe(350)
+    expect((await getProducts()).find(p => p.id === 2).stock).toBe(-2)
+  })
+
+  it('сторно повертає залишок з мінуса', async () => {
+    const r = await createReceipt([{ id: 2, name: 'Американо', price: 50, qty: 7 }], 0, { allowOversell: true })
+    await cancelReceipt(r.no, 'помилка')
+    expect((await getProducts()).find(p => p.id === 2).stock).toBe(5)
+  })
+})
+
+describe('правка чека (сторно «виправлення»)', () => {
+  it('приймає причину «виправлення» і повертає stock для перебиття', async () => {
+    const r = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }])
+    const cancelled = await cancelReceipt(r.no, 'виправлення')
+    expect(cancelled.cancelReason).toBe('виправлення')
+    expect((await getProducts()).find(p => p.id === 1).stock).toBe(10) // повернувся
+  })
+})
+
+describe('журнал коригувань залишку', () => {
+  it('ручна зміна stock в updateProduct лишає запис type=adjustment з дельтою', async () => {
+    await updateProduct(1, { name: 'Еспресо', price: 45, cost: 0, stock: 7 }) // було 10
+    const deliveries = await getDeliveries()
+    const adj = deliveries.find(d => d.type === 'adjustment')
+    expect(adj).toBeDefined()
+    expect(adj.items).toEqual([{ id: 1, name: 'Еспресо', qty: -3 }])
+  })
+
+  it('оновлення без зміни stock не пише коригування', async () => {
+    await updateProduct(1, { name: 'Еспресо подвійний', price: 55, cost: 20, stock: 10 })
+    expect((await getDeliveries()).filter(d => d.type === 'adjustment')).toHaveLength(0)
+  })
+
+  it('поставки позначаються type=delivery', async () => {
+    const d = await receiveDelivery([{ id: 1, name: 'Еспресо', qty: 5 }])
+    expect(d.type).toBe('delivery')
+  })
+})
+
+describe('округлення грошей на вході', () => {
+  it('createProduct округлює ціну і собівартість до цілих ₴', async () => {
+    const p = await createProduct({ cat: 'kava', name: 'Раф', price: 99.6, cost: 33.4, stock: 2 })
+    expect(p.price).toBe(100)
+    expect(p.cost).toBe(33)
+  })
+
+  it('updateProduct округлює так само', async () => {
+    const p = await updateProduct(1, { name: 'Еспресо', price: 45.5, cost: 10.2, stock: 10 })
+    expect(p.price).toBe(46)
+    expect(p.cost).toBe(10)
   })
 })
