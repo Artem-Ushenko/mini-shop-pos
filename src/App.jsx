@@ -40,6 +40,18 @@ const UNLOCK_KEY = 'kasa-unlocked'
 // запам'ятовується, бо каса лишається відкритою на пристрої всю зміну.
 const ADMIN_PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_SHA256
 
+// Дані каси (IndexedDB) прив'язані до адреси. Каса, відкрита за будь-якою
+// іншою адресою (порт 5174, 127.0.0.1, IP по мережі), бачить ІНШЕ, порожнє
+// сховище — попереджаємо, поки касир не наналаштовував «примарну» касу.
+const CANONICAL_ORIGIN = 'http://localhost:5173'
+const wrongAddressBanner = window.location.origin !== CANONICAL_ORIGIN ? (
+  <div className="offline-banner sync-error-banner">
+    ⚠️ Каса відкрита за адресою {window.location.host} — тут дані основної
+    каси НЕ видно. Закрийте всі вікна сервера, запустіть run.bat один раз і
+    відкрийте localhost:5173
+  </div>
+) : null
+
 export default function App() {
   const [screen, setScreen]   = useState('cashier')
   const [cart, setCart]       = useState([])
@@ -96,10 +108,13 @@ export default function App() {
 
   if (!unlocked) {
     return (
-      <PasswordGate
-        correctHash={APP_PASSWORD_HASH}
-        onUnlock={() => { localStorage.setItem(UNLOCK_KEY, APP_PASSWORD_HASH); setUnlocked(true) }}
-      />
+      <>
+        {wrongAddressBanner}
+        <PasswordGate
+          correctHash={APP_PASSWORD_HASH}
+          onUnlock={() => { localStorage.setItem(UNLOCK_KEY, APP_PASSWORD_HASH); setUnlocked(true) }}
+        />
+      </>
     )
   }
 
@@ -108,7 +123,7 @@ export default function App() {
 
   // Перший запуск на пристрої: спочатку точка продажу і касири.
   // Перевірка на locationName також переналаштовує конфіг старого формату.
-  if (!config?.locationName) return <SetupScreen onDone={setConfigState} />
+  if (!config?.locationName) return <>{wrongAddressBanner}<SetupScreen onDone={setConfigState} /></>
 
   const goTo = {
     onReceipts: () => setScreen('receipts'),
@@ -124,6 +139,7 @@ export default function App() {
 
   return (
     <>
+      {wrongAddressBanner}
       {!isOnline && (
         <div className="offline-banner">
           Офлайн — каса працює, всі дані зберігаються на цьому пристрої

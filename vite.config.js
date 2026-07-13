@@ -3,6 +3,14 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  server: {
+    // Дані каси (IndexedDB) прив'язані до адреси localhost:5173 — якщо порт
+    // зайнятий, чесно падаємо замість мовчки відкрити «порожню касу» на 5174.
+    port: 5173,
+    strictPort: true,
+    // Браузер відкриває run.ps1 (ставить KASA_OPEN=1); тестові запуски — без вікна.
+    open: Boolean(process.env.KASA_OPEN),
+  },
   plugins: [
     react(),
     VitePWA({

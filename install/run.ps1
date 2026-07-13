@@ -16,14 +16,25 @@ if (-not (Test-Path $nodeModules)) {
     exit 1
 }
 
+# Каса вже запущена (порт 5173 зайнятий)? Другий сервер піднявся б на іншому
+# порту — а це інше, порожнє сховище даних. Тому просто відкриваємо браузер.
+$busy = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
+if ($busy) {
+    Write-Host "Каса вже запущена в іншому вікні (порт 5173 зайнятий)." -ForegroundColor Yellow
+    Write-Host "Відкриваю браузер на http://localhost:5173 — другий запуск не потрібен."
+    Start-Process "http://localhost:5173"
+    Read-Host "`nНатисніть Enter, щоб закрити"
+    exit 0
+}
+
 Write-Host "========================================================"
 Write-Host "  ГЕРКУЛЕС ШОП — Каса запускається..."
-Write-Host "  Коли з'явиться рядок ""Local:"" — відкрийте цю адресу"
-Write-Host "  в браузері (Chrome або Edge)."
+Write-Host "  Браузер відкриється сам на http://localhost:5173"
 Write-Host "  Щоб зупинити касу — натисніть Ctrl+C у цьому вікні."
 Write-Host "========================================================"
 Write-Host ""
 
+$env:KASA_OPEN = '1'   # каже Vite відкрити браузер, коли сервер готовий
 npm run dev
 
 Read-Host "`nКасу зупинено. Натисніть Enter, щоб закрити"

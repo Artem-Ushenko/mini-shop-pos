@@ -22,6 +22,7 @@ puppeteer.launch({ executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Applic
 
 ## Підводні камені
 
+- **Зупинка фонового `npm run dev` (TaskStop) лишає зомбі-node на порту 5173**, а з `strictPort: true` (vite.config.js, 14.07) наступний dev-сервер через це чесно падає з «Port 5173 is already in use». Після зупинки перевіряй: `Get-NetTCPConnection -LocalPort 5173 -State Listen` → `Stop-Process -Id <OwningProcess> -Force`. E2e ганяй ТІЛЬКИ на `http://localhost:5173` — на `127.0.0.1` це інший origin: порожня база + червоний банер «каса відкрита за іншою адресою».
 - **`innerText` віддає текст після CSS `text-transform: uppercase`** (заголовки типу «ХТО ВІДКРИВАЄ ЗМІНУ?») — перевірки тексту роби регістронезалежними.
 - Клік по тексту кнопки: `[...document.querySelectorAll(sel)].find(e => e.textContent.includes(txt)).click()` через `page.evaluate` — селекторів з data-testid у проєкті немає.
 - `favicon.ico` дає 404 у dev — відомий шум, не пов'язаний зі змінами.
