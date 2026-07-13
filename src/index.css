@@ -37,6 +37,18 @@ body {
 }
 .sync-error-banner { background: var(--c-danger-dk); color: #fee2e2; }
 
+/* Попередження «хмара не налаштована» на екрані відкриття зміни */
+.cloud-warn {
+  background: #fef3c7; color: #92400e;
+  border: 1px solid #fcd34d; border-radius: 8px;
+  padding: 10px 14px; margin: 12px 0 4px;
+  font-size: 0.875rem; text-align: left;
+}
+.cloud-warn-link {
+  color: inherit; font-weight: 600; text-decoration: underline;
+  padding: 0;
+}
+
 /* ── Util ─────────────────────────── */
 button { cursor: pointer; border: none; font: inherit; background: none; color: inherit; }
 

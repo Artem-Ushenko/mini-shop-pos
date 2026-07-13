@@ -82,15 +82,23 @@ export default function BackupScreen({ onBack }) {
     }
   }
 
+  // Пише введені URL+токен у config. Окремої кнопки «Зберегти» мало:
+  // відправка теж мусить зберігати, інакше введене живе лише в полях
+  // до перезавантаження, а sendSnapshot читає зі збереженого config.
+  async function saveSnapshotSettings() {
+    const updated = await setConfig({
+      ...config,
+      snapshot: { url: snapUrl.trim(), token: snapToken.trim() },
+    })
+    setConfigState(updated)
+    return updated
+  }
+
   async function handleSaveSnapshotSettings() {
     setSnapErr(null)
     setSnapMsg(null)
     try {
-      const updated = await setConfig({
-        ...config,
-        snapshot: { url: snapUrl.trim(), token: snapToken.trim() },
-      })
-      setConfigState(updated)
+      await saveSnapshotSettings()
       setSnapMsg('Налаштування збережено')
     } catch (err) {
       setSnapErr(err.message)
@@ -102,8 +110,9 @@ export default function BackupScreen({ onBack }) {
     setSnapMsg(null)
     setSnapshotting(true)
     try {
+      await saveSnapshotSettings()
       const res = await sendSnapshot()
-      setSnapMsg(`Снапшот на Drive: ${res.file}`)
+      setSnapMsg(`Налаштування збережено · Снапшот на Drive: ${res.file}`)
     } catch (err) {
       setSnapErr(err.message)
     } finally {
