@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { createReceipt, calcReceiptTotals } from '../db.js'
 
+const DISCOUNT_PRESETS = [5, 7]
+
 export default function CheckoutScreen({ cart, onConfirm, onBack }) {
   const [discount, setDiscount] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -15,14 +17,18 @@ export default function CheckoutScreen({ cart, onConfirm, onBack }) {
     setDiscount(v)
   }
 
+  function handleDiscountPreset(value) {
+    setDiscount(discount === value ? 0 : value)
+  }
+
   // Продаж понад залишок уже підтверджено касиром у кошику (CashierScreen),
   // тому allowOversell — щоб транзакція не відбила той самий випадок удруге.
   async function handleConfirm(paymentMethod) {
     setLoading(true)
     setError(null)
     try {
-      await createReceipt(cart, discount, { paymentMethod, allowOversell: true })
-      onConfirm()
+      const receipt = await createReceipt(cart, discount, { paymentMethod, allowOversell: true })
+      onConfirm(receipt)
     } catch (e) {
       setError(e.message)
       setLoading(false)
@@ -61,6 +67,18 @@ export default function CheckoutScreen({ cart, onConfirm, onBack }) {
 
           <div className="summary-row discount-row">
             <label htmlFor="discount-input">Знижка</label>
+            <div className="discount-presets">
+              {DISCOUNT_PRESETS.map(preset => (
+                <button
+                  key={preset}
+                  type="button"
+                  className={`discount-preset-btn${discount === preset ? ' active' : ''}`}
+                  onClick={() => handleDiscountPreset(preset)}
+                >
+                  {preset}%
+                </button>
+              ))}
+            </div>
             <div className="discount-input-wrap">
               <input
                 id="discount-input"

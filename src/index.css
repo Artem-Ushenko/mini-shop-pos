@@ -228,6 +228,15 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .autoclose-banner { background: var(--c-primary-dk); color: #dbeafe; }
 .banner-dismiss { margin-left: 12px; font-weight: 700; }
 
+/* Підтвердження продажу — саме зникає, не вимагає дії касира */
+.sale-toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--c-success-dk); color: #dcfce7;
+  padding: 12px 24px; border-radius: var(--radius-sm);
+  font-weight: 600; font-size: 1rem; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  z-index: 200;
+}
+
 .receipt-cashier { font-size: 0.8rem; color: var(--c-muted); }
 
 /* ── App header ───────────────────── */
@@ -386,6 +395,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .discount-row { flex-wrap: wrap; gap: 8px; }
+.discount-presets { display: flex; gap: 6px; }
+.discount-preset-btn {
+  min-height: 40px; padding: 0 14px; border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-sm); background: #fff; font: inherit; font-weight: 600;
+  cursor: pointer;
+}
+.discount-preset-btn:hover { background: var(--c-bg); }
+.discount-preset-btn.active { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
 .discount-input-wrap { display: flex; align-items: center; gap: 6px; }
 .discount-input-wrap input {
   width: 72px; padding: 8px; border: 1.5px solid var(--c-border);

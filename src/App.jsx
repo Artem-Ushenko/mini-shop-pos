@@ -63,6 +63,7 @@ export default function App() {
   const [shift, setShift] = useState(null)
   const [autoClosedShift, setAutoClosedShift] = useState(null)
   const [adminUnlocked, setAdminUnlocked] = useState(false)
+  const [saleToast, setSaleToast] = useState(null)
   // Запам'ятовується сам хеш: зміна пароля в .env інвалідує старі розблокування.
   const [unlocked, setUnlocked] = useState(
     !APP_PASSWORD_HASH || localStorage.getItem(UNLOCK_KEY) === APP_PASSWORD_HASH
@@ -98,6 +99,14 @@ export default function App() {
       window.removeEventListener('offline', goOffline)
     }
   }, [])
+
+  // Підтвердження продажу зникає само — не вимагає дії касира, щоб не
+  // сповільнювати чергу наступних продажів.
+  useEffect(() => {
+    if (!saleToast) return
+    const timer = setTimeout(() => setSaleToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [saleToast])
 
   // «Правка» чека з журналу: чек уже сторновано (причина «виправлення»),
   // позиції переносяться в кошик для редагування і повторного проведення.
@@ -148,6 +157,11 @@ export default function App() {
       {syncError && (
         <div className="offline-banner sync-error-banner">{syncError}</div>
       )}
+      {saleToast && (
+        <div className="sale-toast">
+          ✅ Чек {saleToast.shiftNo ? `№${saleToast.shiftNo}` : `№${saleToast.no}`} проведено · {saleToast.total.toLocaleString('uk-UA')} ₴
+        </div>
+      )}
       {autoClosedShift && (
         <div className="offline-banner autoclose-banner">
           Зміна за {fmtDate(autoClosedShift.openedAt)} ({autoClosedShift.cashier}) закрита автоматично
@@ -158,7 +172,11 @@ export default function App() {
       {screen === 'checkout' && (
         <CheckoutScreen
           cart={cart}
-          onConfirm={() => { setCart([]); setScreen('cashier') }}
+          onConfirm={(receipt) => {
+            setCart([])
+            setScreen('cashier')
+            setSaleToast(receipt)
+          }}
           onBack={() => setScreen('cashier')}
         />
       )}
