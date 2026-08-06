@@ -7,6 +7,7 @@ import { trySendReport, formatShiftOpenReport, formatShiftCloseReport, isSnapsho
 export default function OpenShiftScreen({ config, onOpened, onConfigChange, onReceipts, onManage, onStats, onBackup, onDeliveries }) {
   const [error, setError] = useState(null)
   const [opening, setOpening] = useState(false)
+  const [confirmingCashier, setConfirmingCashier] = useState(null)
   const [showAddCashier, setShowAddCashier] = useState(false)
   const [newName, setNewName] = useState('')
   const [openingCash, setOpeningCash] = useState('')
@@ -35,7 +36,12 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
     } catch (e) {
       setError(e.message)
       setOpening(false)
+      setConfirmingCashier(null)
     }
+  }
+
+  function handleConfirmOpen() {
+    handleOpen(confirmingCashier)
   }
 
   // Перейменування точки: нова назва піде в наступні зміни/чеки і в префікс
@@ -128,12 +134,33 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
               key={c}
               className="cashier-pick-btn"
               disabled={opening}
-              onClick={() => handleOpen(c)}
+              onClick={() => setConfirmingCashier(c)}
             >
               👤 {c}
             </button>
           ))}
         </div>
+
+        {confirmingCashier && (
+          <div className="modal-overlay" onClick={() => !opening && setConfirmingCashier(null)}>
+            <div className="card modal-card" onClick={e => e.stopPropagation()}>
+              <h2>Відкрити зміну?</h2>
+              <ul className="shift-summary">
+                <li><span>Касир</span><strong>👤 {confirmingCashier}</strong></li>
+                <li><span>Точка</span><strong>{config.locationName}</strong></li>
+                <li><span>Розмінна готівка</span><strong>{(Number(openingCash) || 0).toLocaleString('uk-UA')} ₴</strong></li>
+              </ul>
+              <div className="modal-actions">
+                <button className="btn-ghost" disabled={opening} onClick={() => setConfirmingCashier(null)}>
+                  Скасувати
+                </button>
+                <button className="btn-primary" disabled={opening} onClick={handleConfirmOpen}>
+                  {opening ? 'Відкриваємо…' : 'Так, відкрити зміну'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showAddCashier ? (
           <form className="cashier-add-form" onSubmit={handleAddCashier}>

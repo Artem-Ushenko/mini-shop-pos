@@ -233,6 +233,59 @@ export async function getCategories() {
   return all
 }
 
+// Транслітерація для id нової категорії — той самий підхід, що й у
+// scripts/migrate-woo.mjs, щоб вручну додані категорії мали такі самі
+// латинські kebab-case id, як і ті, що прийшли з WooCommerce-міграції.
+const CATEGORY_TRANSLIT = { а:'a',б:'b',в:'v',г:'g',ґ:'g',д:'d',е:'e',є:'e',ж:'zh',з:'z',
+  и:'y',і:'i',ї:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',
+  у:'u',ф:'f',х:'kh',ц:'ts',ч:'ch',ш:'sh',щ:'shch',ю:'yu',я:'ya' }
+
+function slugifyCategoryName(str) {
+  const slug = str.toLowerCase()
+    .split('').map(c => CATEGORY_TRANSLIT[c] ?? c).join('')
+    .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 24)
+  return slug || 'category'
+}
+
+// Нові категорії йдуть в кінець списку вкладок (order = max+1) — власник
+// сортує вручну лише перейменуванням, порядок наперед не задається формою.
+export async function createCategory({ name, emoji = '📦' }) {
+  const trimmedName = (name ?? '').trim()
+  if (!trimmedName) throw new Error('Вкажіть назву категорії')
+
+  const existing = await db().getAll('categories')
+  const baseId = slugifyCategoryName(trimmedName)
+  let id = baseId
+  for (let n = 2; existing.some(c => c.id === id); n++) id = `${baseId}-${n}`
+
+  const maxOrder = existing.reduce((m, c) => Math.max(m, c.order ?? 0), 0)
+  const category = { id, name: trimmedName, emoji: (emoji ?? '').trim() || '📦', order: maxOrder + 1 }
+  await db().put('categories', category)
+  return category
+}
+
+export async function updateCategory(id, { name }) {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed) throw new Error('Вкажіть назву категорії')
+
+  const category = await db().get('categories', id)
+  if (!category) throw new Error(`Категорію ${id} не знайдено`)
+
+  const updated = { ...category, name: trimmed }
+  await db().put('categories', updated)
+  return updated
+}
+
+// Видалення заблоковане, поки в категорії є товари — інакше вони лишились би
+// з посиланням на неіснуючу категорію (зникли б з фільтрів/вкладок мовчки).
+export async function deleteCategory(id) {
+  const productCount = await db().countFromIndex('products', 'cat', id)
+  if (productCount > 0) {
+    throw new Error(`У категорії ще є товари (${productCount}) — спочатку перенесіть або видаліть їх`)
+  }
+  await db().delete('categories', id)
+}
+
 // ── Товари ─────────────────────────────────────────────────
 
 export async function getProducts(catId) {
@@ -251,7 +304,10 @@ export async function searchProducts(query) {
 
 // Уся грошова математика каси працює в цілих ₴ — ціни округлюються на вході,
 // щоб дробове значення з форми чи CSV не рознесло копійки по чеках.
-export async function createProduct({ cat, name, price, stock, cost = 0 }) {
+// brand — опційний, лише для товарів, доданих вручну через касу: WooCommerce-
+// експорт не містить окремого поля бренду (див. sync.js), тому весь старий
+// каталог лишається без нього, поки власник не проставить вручну.
+export async function createProduct({ cat, name, price, stock, cost = 0, brand = '' }) {
   const all = await db().getAll('products')
   const manualIds = all.map(p => p.id).filter(id => id >= MANUAL_ID_START)
   const id = manualIds.length ? Math.max(...manualIds) + 1 : MANUAL_ID_START
@@ -261,6 +317,7 @@ export async function createProduct({ cat, name, price, stock, cost = 0 }) {
     price: Math.round(Number(price) || 0),
     cost: Math.round(Number(cost) || 0),
     stock: Math.round(Number(stock) || 0),
+    brand: (brand ?? '').trim(),
     updatedAt: now, priceUpdatedAt: now,
   }
   await db().put('products', product)
@@ -276,7 +333,7 @@ export async function createProduct({ cat, name, price, stock, cost = 0 }) {
 // Ручна зміна залишку (не через поставку і не через продаж) лишає слід
 // у журналі deliveries записом type: 'adjustment' з дельтою — інакше після неї
 // неможливо відповісти, звідки взявся чи зник товар.
-export async function updateProduct(id, { name, price, stock, cost = 0 }) {
+export async function updateProduct(id, { name, price, stock, cost = 0, brand }) {
   const tx = db().transaction(['products', 'deliveries'], 'readwrite')
   const prodStore = tx.objectStore('products')
   const product = await prodStore.get(id)
@@ -289,6 +346,9 @@ export async function updateProduct(id, { name, price, stock, cost = 0 }) {
     price: Math.round(Number(price) || 0),
     cost: Math.round(Number(cost) || 0),
     stock: newStock,
+    // brand не передано викликом (напр. старий код/тест) — лишаємо як було,
+    // не стираємо мовчки.
+    brand: brand === undefined ? (product.brand ?? '') : (brand ?? '').trim(),
     updatedAt: now, priceUpdatedAt: now,
   }
   await prodStore.put(updated)
@@ -528,6 +588,27 @@ export async function importBackup(backup) {
   // інакше відновлення стерло б налаштування каси на цьому пристрої.
   if (backup.config) await configStore.put(backup.config, CONFIG_KEY)
 
+  await tx.done
+}
+
+// ── Повне скидання (нова точка на цьому пристрої) ────────────
+
+// Повний, безповоротний скид: каталог, залишки, чеки, зміни, поставки і
+// конфіг точки (назва/касири/налаштування хмари). Після виклику застосунок
+// поводиться так, ніби це щойно розпакований пристрій — наступне
+// перезавантаження відкриє SetupScreen. catalog.csv НЕ реімпортується
+// автоматично (localStorage['lastImportHash'] лишається незмінним і далі
+// відповідає незмінному вмісту файлу) — інакше товари з нього одразу
+// повернулись би після скидання. Викликач відповідає за підтвердження в UI —
+// ця функція жодного разу не питає.
+export async function resetDatabase() {
+  const tx = db().transaction(['categories', 'products', 'receipts', 'shifts', 'deliveries', 'config'], 'readwrite')
+  await tx.objectStore('categories').clear()
+  await tx.objectStore('products').clear()
+  await tx.objectStore('receipts').clear()
+  await tx.objectStore('shifts').clear()
+  await tx.objectStore('deliveries').clear()
+  await tx.objectStore('config').delete(CONFIG_KEY)
   await tx.done
 }
 

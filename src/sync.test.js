@@ -162,6 +162,18 @@ describe('importFromFile', () => {
     expect(Number(localStorage.getItem('lastImportTime'))).toBeGreaterThanOrEqual(before)
   })
 
+  it('зберігає вручну проставлений бренд при реімпорті (catalog.csv не має колонки бренду)', async () => {
+    db.getProducts.mockResolvedValue([
+      { id: 1, cat: 'protein', name: 'Whey 900г', price: 1250, cost: 850, stock: 12, brand: 'HS Labs', updatedAt: Date.now() },
+    ])
+
+    await importFromFile(SAMPLE_CSV)
+
+    expect(db.putProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, brand: 'HS Labs' })
+    )
+  })
+
   it('кидає помилку при невірному форматі', async () => {
     await expect(importFromFile('порожній файл без секцій')).rejects.toThrow('Невірний формат')
   })

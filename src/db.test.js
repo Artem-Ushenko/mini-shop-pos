@@ -11,6 +11,9 @@ import {
   closeShiftLocal,
   getCurrentShift,
   getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
   getProducts,
   searchProducts,
   createProduct,
@@ -27,6 +30,7 @@ import {
   getDeliveries,
   exportBackup,
   importBackup,
+  resetDatabase,
   calcReceiptTotals,
 } from './db.js'
 
@@ -56,6 +60,68 @@ describe('getCategories', () => {
     expect(cats).toHaveLength(2)
     expect(cats[0].id).toBe('kava')
     expect(cats[1].id).toBe('yizha')
+  })
+})
+
+describe('createCategory', () => {
+  it('створює категорію зі slug-id, дефолтним емодзі і порядком в кінці списку', async () => {
+    const cat = await createCategory({ name: 'Нова категорія' })
+    expect(cat.id).toBe('nova-kategoriya')
+    expect(cat.emoji).toBe('📦')
+    expect(cat.order).toBe(3) // після kava(1) і yizha(2)
+
+    const cats = await getCategories()
+    expect(cats.find(c => c.id === 'nova-kategoriya')).toBeDefined()
+  })
+
+  it('використовує заданий емодзі', async () => {
+    const cat = await createCategory({ name: 'Солодощі', emoji: '🍬' })
+    expect(cat.emoji).toBe('🍬')
+  })
+
+  it('уникає колізії id, якщо slug вже зайнятий', async () => {
+    const first = await createCategory({ name: 'Кава' }) // slug 'kava' вже зайнятий сідом
+    expect(first.id).toBe('kava-2')
+  })
+
+  it('відхиляє порожню назву', async () => {
+    await expect(createCategory({ name: '   ' })).rejects.toThrow('Вкажіть назву')
+  })
+})
+
+describe('updateCategory', () => {
+  it('перейменовує категорію', async () => {
+    const updated = await updateCategory('kava', { name: 'Кава і напої' })
+    expect(updated.name).toBe('Кава і напої')
+    const cats = await getCategories()
+    expect(cats.find(c => c.id === 'kava').name).toBe('Кава і напої')
+  })
+
+  it('обрізає пробіли в назві', async () => {
+    const updated = await updateCategory('kava', { name: '  Кава  ' })
+    expect(updated.name).toBe('Кава')
+  })
+
+  it('відхиляє порожню назву', async () => {
+    await expect(updateCategory('kava', { name: '   ' })).rejects.toThrow('Вкажіть назву')
+  })
+
+  it('кидає помилку для неіснуючої категорії', async () => {
+    await expect(updateCategory('nope', { name: 'Щось' })).rejects.toThrow('не знайдено')
+  })
+})
+
+describe('deleteCategory', () => {
+  it('видаляє категорію без товарів', async () => {
+    await deleteCategory('yizha')
+    const cats = await getCategories()
+    expect(cats.find(c => c.id === 'yizha')).toBeUndefined()
+  })
+
+  it('блокує видалення категорії з товарами', async () => {
+    await expect(deleteCategory('kava')).rejects.toThrow('товари')
+    const cats = await getCategories()
+    expect(cats.find(c => c.id === 'kava')).toBeDefined()
   })
 })
 
@@ -177,6 +243,14 @@ describe('createProduct', () => {
     expect(withCost.cost).toBe(25)
   })
 
+  it('трактує відсутній бренд як порожній рядок, зберігає і обрізає заданий', async () => {
+    const withoutBrand = await createProduct({ cat: 'kava', name: 'Латте', price: 60, stock: 5 })
+    expect(withoutBrand.brand).toBe('')
+
+    const withBrand = await createProduct({ cat: 'kava', name: 'Раф', price: 70, stock: 3, brand: '  Lavazza  ' })
+    expect(withBrand.brand).toBe('Lavazza')
+  })
+
   it('позначає ціну як щойно встановлену вручну (priceUpdatedAt)', async () => {
     const product = await createProduct({ cat: 'kava', name: 'Латте', price: 60, stock: 5 })
     expect(product.priceUpdatedAt).toBe(product.updatedAt)
@@ -204,6 +278,17 @@ describe('updateProduct', () => {
   it('позначає ціну як щойно відредаговану вручну (priceUpdatedAt)', async () => {
     const updated = await updateProduct(1, { name: 'Еспресо', price: 50, stock: 10 })
     expect(updated.priceUpdatedAt).toBe(updated.updatedAt)
+  })
+
+  it('встановлює і обрізає бренд', async () => {
+    const updated = await updateProduct(1, { name: 'Еспресо', price: 45, stock: 10, brand: '  Lavazza  ' })
+    expect(updated.brand).toBe('Lavazza')
+  })
+
+  it('лишає бренд без змін, якщо виклик його не передав', async () => {
+    await updateProduct(1, { name: 'Еспресо', price: 45, stock: 10, brand: 'Lavazza' })
+    const updated = await updateProduct(1, { name: 'Еспресо подвійний', price: 55, stock: 10 })
+    expect(updated.brand).toBe('Lavazza')
   })
 })
 
@@ -351,6 +436,33 @@ describe('exportBackup / importBackup', () => {
   it('кидає помилку при невірному форматі файлу', async () => {
     await expect(importBackup({ foo: 'bar' })).rejects.toThrow('Невірний формат')
     await expect(importBackup(null)).rejects.toThrow('Невірний формат')
+  })
+})
+
+describe('resetDatabase', () => {
+  it('стирає категорії, товари, чеки, зміни, поставки і конфіг точки', async () => {
+    await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }])
+    await receiveDelivery([{ id: 1, name: 'Еспресо', qty: 5 }])
+    await closeShiftLocal('cashier')
+
+    await resetDatabase()
+
+    expect(await getCategories()).toHaveLength(0)
+    expect(await getProducts()).toHaveLength(0)
+    expect(await getReceipts()).toHaveLength(0)
+    expect(await getDeliveries()).toHaveLength(0)
+    expect(await getCurrentShift()).toBeNull()
+    expect(await getConfig()).toBeNull()
+  })
+
+  it('дозволяє налаштувати касу з нуля після скидання', async () => {
+    await resetDatabase()
+    const config = await setConfig({ locationName: 'Новий магазин', cashiers: ['Марія'] })
+    expect(config.locationName).toBe('Новий магазин')
+
+    const cat = await createCategory({ name: 'Перша категорія' })
+    const product = await createProduct({ cat: cat.id, name: 'Перший товар', price: 100, stock: 10 })
+    expect(product.cat).toBe(cat.id)
   })
 })
 

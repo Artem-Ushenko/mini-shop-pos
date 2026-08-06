@@ -127,6 +127,9 @@ export async function importFromFile(csvText) {
       cost: priceEditedLocally ? local.cost : csvProduct.cost,
       priceUpdatedAt: local.priceUpdatedAt,
       updatedAt: stockChangedLocally ? local.updatedAt : Date.now(),
+      // catalog.csv не має колонки бренду (WooCommerce-експорт її не дає) —
+      // без цього put() стер би вручну проставлений бренд при кожному реімпорті.
+      brand: local.brand ?? '',
     })
   }
 

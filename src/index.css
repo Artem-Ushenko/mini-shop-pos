@@ -521,6 +521,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .manage-backup { display: flex; flex-direction: column; gap: 8px; }
 .backup-hint { font-size: 0.8rem; color: var(--c-muted); }
+.danger-zone { border: 1.5px solid var(--c-danger); }
 .manage-backup-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .manage-add-form { display: flex; flex-direction: column; gap: 10px; }
@@ -537,8 +538,15 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .manage-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 .manage-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.manage-list .manage-item:not(.card) { padding-bottom: 10px; border-bottom: 1px solid var(--c-border); }
+.manage-list .manage-item:not(.card):last-child { padding-bottom: 0; border-bottom: none; }
 .manage-item-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .manage-item-name { font-weight: 600; font-size: 0.9rem; }
+.brand-tag {
+  display: inline-block; font-weight: 700; font-size: 0.68rem; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--c-primary); background: #eff6ff;
+  border-radius: 999px; padding: 2px 8px; margin-right: 6px; vertical-align: middle;
+}
 .manage-item-meta { font-size: 0.8rem; color: var(--c-muted); }
 .manage-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
 

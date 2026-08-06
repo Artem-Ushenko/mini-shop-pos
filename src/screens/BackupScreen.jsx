@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { exportBackup, importBackup, getConfig, setConfig } from '../db.js'
+import { exportBackup, importBackup, getConfig, setConfig, resetDatabase } from '../db.js'
 import { sendSnapshot, getSnapshotStatus } from '../cloud.js'
 
 function fmtDateTime(ts) {
@@ -24,6 +24,13 @@ export default function BackupScreen({ onBack }) {
   // best effort-захист IndexedDB від витіснення браузером — власник має
   // бачити, якщо браузер його НЕ гарантує (дані можуть зникнути під тиском місця).
   const [persisted, setPersisted] = useState(null)
+
+  // Повне скидання бази (нова точка на цьому пристрої) — безповоротно,
+  // тому підтвердження вимагає ввести точну назву поточної точки, а не Так/Ні.
+  const [resetConfirming, setResetConfirming] = useState(false)
+  const [resetTypedName, setResetTypedName] = useState('')
+  const [resetError, setResetError] = useState(null)
+  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
     getConfig().then(cfg => {
@@ -102,6 +109,18 @@ export default function BackupScreen({ onBack }) {
       setSnapMsg('Налаштування збережено')
     } catch (err) {
       setSnapErr(err.message)
+    }
+  }
+
+  async function handleResetDatabase() {
+    setResetError(null)
+    setResetting(true)
+    try {
+      await resetDatabase()
+      window.location.reload()
+    } catch (err) {
+      setResetError(err.message)
+      setResetting(false)
     }
   }
 
@@ -223,6 +242,50 @@ export default function BackupScreen({ onBack }) {
               ? '✅ увімкнено (браузер не витіснить дані)'
               : '⚠️ не гарантовано — браузер може стерти дані під тиском місця, робіть бекапи'}
           </p>
+        </div>
+
+        <div className="card manage-backup danger-zone" style={{ marginTop: 16 }}>
+          <h3 style={{ marginBottom: 8, color: 'var(--c-danger)' }}>⚠️ Нова точка на цьому пристрої</h3>
+          <p className="backup-hint">
+            Повністю очищує базу цього пристрою — категорії, товари, чеки, зміни, поставки і
+            налаштування точки (назва/касири/хмара). Каса перезавантажиться на екран першого
+            запуску, ніби це щойно розпакований пристрій. Використовуйте лише при переведенні
+            цього пристрою на нову торгову точку — <strong>дію неможливо скасувати</strong>, зробіть бекап заздалегідь.
+          </p>
+
+          {!resetConfirming ? (
+            <button className="btn-ghost" style={{ color: 'var(--c-danger)' }} onClick={() => setResetConfirming(true)}>
+              Очистити базу…
+            </button>
+          ) : (
+            <div className="manage-backup" style={{ gap: 10 }}>
+              <div className="manage-form-row">
+                <input
+                  type="text"
+                  placeholder={`Введіть «${config?.locationName ?? ''}» для підтвердження`}
+                  value={resetTypedName}
+                  onChange={e => setResetTypedName(e.target.value)}
+                />
+              </div>
+              {resetError && <p className="error-msg">{resetError}</p>}
+              <div className="manage-backup-actions">
+                <button
+                  className="btn-danger"
+                  disabled={resetting || resetTypedName.trim() !== (config?.locationName ?? '').trim()}
+                  onClick={handleResetDatabase}
+                >
+                  {resetting ? 'Очищення…' : 'Так, стерти все безповоротно'}
+                </button>
+                <button
+                  className="btn-ghost-sm"
+                  disabled={resetting}
+                  onClick={() => { setResetConfirming(false); setResetTypedName(''); setResetError(null) }}
+                >
+                  Скасувати
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
