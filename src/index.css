@@ -1,15 +1,19 @@
+/* Спільна палітра екосистеми «Геркулес» — ті самі значення, що й у
+   сестринському проєкті (Геркулес Клуб, gym-POS/src/index.css). Змінні
+   лишаються з префіксом --c- (звідси залежить решта файлу), значення
+   синхронізовані. */
 :root {
-  --c-primary:    #2563eb;
-  --c-primary-dk: #1d4ed8;
-  --c-success:    #16a34a;
-  --c-success-dk: #15803d;
-  --c-danger:     #dc2626;
-  --c-danger-dk:  #b91c1c;
-  --c-bg:         #f1f5f9;
+  --c-primary:    #2456d6;
+  --c-primary-dk: #1c44ab;
+  --c-success:    #1a7f37;
+  --c-success-dk: #15672c;
+  --c-danger:     #cf222e;
+  --c-danger-dk:  #a51d27;
+  --c-bg:         #f4f5f7;
   --c-card:       #ffffff;
-  --c-text:       #1e293b;
-  --c-muted:      #64748b;
-  --c-border:     #e2e8f0;
+  --c-text:       #1a1d21;
+  --c-muted:      #6b7280;
+  --c-border:     #d8dbe0;
   --radius:       12px;
   --radius-sm:    8px;
   --shadow:       0 1px 4px rgba(0,0,0,.10);
@@ -21,7 +25,7 @@
 html, body, #root { height: 100%; overflow: hidden; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
   background: var(--c-bg);
   color: var(--c-text);
   -webkit-tap-highlight-color: transparent;

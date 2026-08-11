@@ -11,6 +11,13 @@ export default defineConfig({
     // Браузер відкриває run.ps1 (ставить KASA_OPEN=1); тестові запуски — без вікна.
     open: Boolean(process.env.KASA_OPEN),
   },
+  preview: {
+    // Продакшн-запуск (start-desk.bat, той самий принцип, що в
+    // сестринському проєкті — Геркулес Клуб): build + vite preview,
+    // окремий порт від dev (5173), щоб обидва могли працювати одночасно.
+    port: 8081,
+    strictPort: true,
+  },
   plugins: [
     react(),
     VitePWA({
@@ -21,8 +28,8 @@ export default defineConfig({
         short_name: 'Каса',
         description: 'Офлайн-каса магазину спортивного харчування Геркулес Шоп',
         lang: 'uk',
-        theme_color: '#2563eb',
-        background_color: '#f1f5f9',
+        theme_color: '#2456d6',
+        background_color: '#f4f5f7',
         display: 'standalone',
         orientation: 'any',
         start_url: '/',
