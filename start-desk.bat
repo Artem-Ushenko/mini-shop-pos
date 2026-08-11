@@ -22,7 +22,10 @@ REM ═════════════════════════�
 REM ---- ЗАПОВНИТИ ПЕРЕД ЗАПУСКОМ -----------------------------
 set "CHROME=C:\Program Files\Google\Chrome\Application\chrome.exe"
 set "PROFILES=C:\Herkules\profiles"
-set "PORT=8081"
+REM 5173, НЕ інший порт: дані каси (IndexedDB) прив'язані до
+REM localhost:5173 (CANONICAL_ORIGIN в src/App.jsx) — інший порт
+REM тут покаже касиру банер «примарної каси» й порожню базу.
+set "PORT=5173"
 REM -----------------------------------------------------------
 
 set "APP_DIR=%~dp0"

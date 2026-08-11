@@ -13,9 +13,11 @@ export default defineConfig({
   },
   preview: {
     // Продакшн-запуск (start-desk.bat, той самий принцип, що в
-    // сестринському проєкті — Геркулес Клуб): build + vite preview,
-    // окремий порт від dev (5173), щоб обидва могли працювати одночасно.
-    port: 8081,
+    // сестринському проєкті — Геркулес Клуб): build + vite preview.
+    // Той самий порт, що й dev (5173) — навмисно: дані каси (IndexedDB)
+    // прив'язані до localhost:5173 (CANONICAL_ORIGIN в App.jsx). Інший
+    // порт тут = «порожня» каса і банер «примарної каси» касиру.
+    port: 5173,
     strictPort: true,
   },
   plugins: [
