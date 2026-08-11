@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getCategories, getProducts, getCurrentShift, closeShiftLocal } from '../db.js'
 import { trySendSnapshot, formatShiftCloseReport } from '../cloud.js'
+import { writeLocalBackup } from '../localBackup.js'
 
 export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onCheckout, onReceipts, onManage, onStats, onBackup, onDeliveries }) {
   const [categories, setCategories] = useState([])
@@ -30,6 +31,9 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
       // Хмарний снапшот + Telegram-звіт — після закриття, у фоні: каса не
       // чекає хмару, невдача ставить прапорець/чергу і повториться при мережі.
       trySendSnapshot(closed ? formatShiftCloseReport(closed) : undefined)
+      // Копія на локальний диск (Google Drive for Desktop) — той самий момент,
+      // що в Клубі: закриття зміни = одразу бекап, а не лише за розкладом.
+      writeLocalBackup()
       onShiftClosed()
     } catch (e) {
       setClosingShift(null)

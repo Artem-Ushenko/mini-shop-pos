@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { initDB, getConfig, getCurrentShift } from './db.js'
 import { importFromFile } from './sync.js'
 import { retryPending } from './cloud.js'
+import { initLocalBackup, bindLocalBackupUnload } from './localBackup.js'
 import CashierScreen from './screens/CashierScreen.jsx'
 import CheckoutScreen from './screens/CheckoutScreen.jsx'
 import ReceiptsScreen from './screens/ReceiptsScreen.jsx'
@@ -88,6 +89,8 @@ export default function App() {
       }
     }
     boot().then(() => retryPending())
+    initLocalBackup()
+    bindLocalBackupUnload()
 
     // При появі мережі — досилаємо відкладені Telegram-звіти і снапшот (якщо є).
     const goOnline  = () => { setIsOnline(true); retryPending() }

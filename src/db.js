@@ -136,6 +136,20 @@ export async function setConfig(cfg) {
   return normalized
 }
 
+// ── Метадані (довільні ключ-значення) ───────────────────────
+// Той самий об'єктний стор 'config' (він без keyPath — довільні ключі
+// кладуться поруч із записом CONFIG_KEY, без нової версії БД). Для
+// службових даних поза бізнес-конфігом точки — напр. дескриптор
+// папки локального бекапу (localBackup.js), що не має проходити
+// валідацію setConfig().
+export async function getMeta(key) {
+  return (await db().get('config', key)) ?? null
+}
+
+export async function setMeta(key, value) {
+  await db().put('config', value, key)
+}
+
 // ── Зміни ──────────────────────────────────────────────────
 // shift: { id, loc, cashier, openedAt, closedAt, closedBy,
 //          receiptCount, stornoCount, total }

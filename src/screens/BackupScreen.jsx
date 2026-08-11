@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { exportBackup, importBackup, getConfig, setConfig, resetDatabase } from '../db.js'
 import { sendSnapshot, getSnapshotStatus } from '../cloud.js'
+import {
+  onLocalBackupStatusChange, formatLocalBackupStatus, pickLocalBackupFolder,
+  reconfirmLocalBackupPermission, writeLocalBackup, getLocalBackupFolderName,
+  BACKUP_INTERVAL_MIN, BACKUP_KEEP,
+} from '../localBackup.js'
 
 function fmtDateTime(ts) {
   return new Date(ts).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' })
@@ -24,6 +29,16 @@ export default function BackupScreen({ onBack }) {
   // best effort-захист IndexedDB від витіснення браузером — власник має
   // бачити, якщо браузер його НЕ гарантує (дані можуть зникнути під тиском місця).
   const [persisted, setPersisted] = useState(null)
+
+  // Копія на локальний диск (Google Drive for Desktop) — той самий стек, що в Клубі
+  const [localState, setLocalState] = useState(null)
+  const [localAlerts, setLocalAlerts] = useState([])
+  const localAlert = (message) => {
+    const id = Math.random()
+    setLocalAlerts((a) => [...a, { id, message }])
+    setTimeout(() => setLocalAlerts((a) => a.filter((x) => x.id !== id)), 5000)
+  }
+  useEffect(() => onLocalBackupStatusChange(setLocalState), [])
 
   // Повне скидання бази (нова точка на цьому пристрої) — безповоротно,
   // тому підтвердження вимагає ввести точну назву поточної точки, а не Так/Ні.
@@ -186,6 +201,50 @@ export default function BackupScreen({ onBack }) {
                 Скасувати
               </button>
             </div>
+          )}
+        </div>
+
+        <div className="card manage-backup" style={{ marginTop: 16 }}>
+          <h3 style={{ marginBottom: 8 }}>📁 Копія на диск (Google Drive for Desktop)</h3>
+          <p className="backup-hint">
+            Той самий принцип, що в Геркулес Клуб: повний знімок бази пишеться файлом
+            у обрану папку на диску (напр. G:, синхронізований Google Drive for Desktop)
+            — кожні {BACKUP_INTERVAL_MIN} хв, при закритті зміни і при закритті вкладки.
+            Зберігаються останні {BACKUP_KEEP} файлів. Без інтернету, без токенів.
+          </p>
+
+          {!localState ? null : (
+            <>
+              <p className={formatLocalBackupStatus(localState).stale ? 'status-deny' : 'status-ok'}>
+                {formatLocalBackupStatus(localState).text}
+              </p>
+              <p className="backup-hint">
+                {localState.configured
+                  ? `Папка: ${getLocalBackupFolderName() || '(без назви)'}${localState.lastError ? ' · ' + localState.lastError : ''}`
+                  : 'Папка ще не вказана.'}
+              </p>
+              <div className="manage-backup-actions">
+                {!localState.configured || !localState.permissionOk ? (
+                  <button className="btn-primary" onClick={async () => {
+                    try { await (localState.configured ? reconfirmLocalBackupPermission() : pickLocalBackupFolder()) }
+                    catch (err) { localAlert(err.message) }
+                  }}>
+                    {localState.configured ? 'Вказати папку заново' : 'Обрати папку бекапів'}
+                  </button>
+                ) : (
+                  <>
+                    <button className="btn-ghost" onClick={async () => {
+                      const r = await writeLocalBackup()
+                      if (!r.ok) localAlert('Не вдалося зробити бекап: ' + r.reason)
+                    }}>Зробити бекап зараз</button>
+                    <button className="btn-ghost" onClick={async () => {
+                      try { await pickLocalBackupFolder() } catch (err) { localAlert(err.message) }
+                    }}>Змінити папку</button>
+                  </>
+                )}
+              </div>
+              {localAlerts.map((a) => <p key={a.id} className="error-msg" style={{ marginTop: 8 }}>{a.message}</p>)}
+            </>
           )}
         </div>
 
