@@ -7,9 +7,7 @@ import CashierScreen from './screens/CashierScreen.jsx'
 import CheckoutScreen from './screens/CheckoutScreen.jsx'
 import ReceiptsScreen from './screens/ReceiptsScreen.jsx'
 import ManageCatalogScreen from './screens/ManageCatalogScreen.jsx'
-import StatsScreen from './screens/StatsScreen.jsx'
-import BackupScreen from './screens/BackupScreen.jsx'
-import DeliveriesScreen from './screens/DeliveriesScreen.jsx'
+import SettingsScreen from './screens/SettingsScreen.jsx'
 import PasswordGate from './screens/PasswordGate.jsx'
 import SetupScreen from './screens/SetupScreen.jsx'
 import OpenShiftScreen from './screens/OpenShiftScreen.jsx'
@@ -37,8 +35,9 @@ const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD_SHA256
 const UNLOCK_KEY = 'kasa-unlocked'
 
 // Хеш пароля адміністратора (.env → VITE_ADMIN_PASSWORD_SHA256): без нього
-// касир не потрапить в «Облік товарів». Питається щоразу — розблокування не
-// запам'ятовується, бо каса лишається відкритою на пристрої всю зміну.
+// касир не потрапить в «Облік товарів» чи «Налаштування» (статистика+бекапи).
+// Питається щоразу — розблокування не запам'ятовується, бо каса лишається
+// відкритою на пристрої всю зміну.
 const ADMIN_PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_SHA256
 
 // Дані каси (IndexedDB) прив'язані до адреси. Каса, відкрита за будь-якою
@@ -140,9 +139,7 @@ export default function App() {
   const goTo = {
     onReceipts: () => setScreen('receipts'),
     onManage: () => setScreen('manage'),
-    onStats: () => setScreen('stats'),
-    onBackup: () => setScreen('backup'),
-    onDeliveries: () => setScreen('deliveries'),
+    onSettings: () => setScreen('settings'),
   }
 
   // Забута вчорашня зміна не продовжується мовчки: каса показує екран
@@ -202,14 +199,18 @@ export default function App() {
           onBack={() => { setAdminUnlocked(false); setScreen('cashier') }}
         />
       )}
-      {screen === 'stats' && (
-        <StatsScreen onBack={() => setScreen('cashier')} />
+      {screen === 'settings' && ADMIN_PASSWORD_HASH && !adminUnlocked && (
+        <PasswordGate
+          correctHash={ADMIN_PASSWORD_HASH}
+          hint="Налаштування доступні лише адміністратору"
+          onUnlock={() => setAdminUnlocked(true)}
+          onBack={() => setScreen('cashier')}
+        />
       )}
-      {screen === 'backup' && (
-        <BackupScreen onBack={() => setScreen('cashier')} />
-      )}
-      {screen === 'deliveries' && (
-        <DeliveriesScreen onBack={() => setScreen('cashier')} />
+      {screen === 'settings' && (!ADMIN_PASSWORD_HASH || adminUnlocked) && (
+        <SettingsScreen
+          onBack={() => { setAdminUnlocked(false); setScreen('cashier') }}
+        />
       )}
       {screen === 'cashier' && !activeShift && (
         <OpenShiftScreen

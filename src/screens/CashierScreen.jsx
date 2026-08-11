@@ -3,7 +3,7 @@ import { getCategories, getProducts, getCurrentShift, closeShiftLocal } from '..
 import { trySendSnapshot, formatShiftCloseReport } from '../cloud.js'
 import { writeLocalBackup } from '../localBackup.js'
 
-export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onCheckout, onReceipts, onManage, onStats, onBackup, onDeliveries }) {
+export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onCheckout, onReceipts, onManage, onSettings }) {
   const [categories, setCategories] = useState([])
   const [catalog, setCatalog] = useState([])
   const [activeCat, setActiveCat] = useState(null)
@@ -122,10 +122,8 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn-ghost" onClick={onManage}>Облік товарів</button>
-            <button className="btn-ghost" onClick={onDeliveries}>Поставки</button>
             <button className="btn-ghost" onClick={onReceipts}>Журнал</button>
-            <button className="btn-ghost" onClick={onStats}>Статистика</button>
-            <button className="btn-ghost" onClick={onBackup}>Бекапи</button>
+            <button className="btn-ghost" onClick={onSettings}>Налаштування</button>
             <button className="btn-ghost btn-ghost-danger" onClick={handleCloseShiftClick}>
               Закрити зміну
             </button>

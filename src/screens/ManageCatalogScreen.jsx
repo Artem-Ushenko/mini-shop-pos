@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getCategories, getProducts, createProduct, updateProduct, deleteProduct, createCategory, updateCategory, deleteCategory } from '../db.js'
+import DeliveriesScreen from './DeliveriesScreen.jsx'
 
 const PAGE_SIZE = 30
 
@@ -26,7 +27,9 @@ export default function ManageCatalogScreen({ onBack }) {
   const [editForm, setEditForm] = useState({ name: '', price: '', cost: '', stock: '', brand: '' })
   const [editError, setEditError] = useState(null)
 
-  const [showCategories, setShowCategories] = useState(false)
+  // «Поставки» — навмисно посередині (не перший, не останній пункт), щоб
+  // касир не сприймав його як головну дію на цьому екрані.
+  const [tab, setTab] = useState('products') // 'products' | 'deliveries' | 'categories'
   const [editingCatId, setEditingCatId] = useState(null)
   const [editCatName, setEditCatName] = useState('')
   const [catError, setCatError] = useState(null)
@@ -206,54 +209,31 @@ export default function ManageCatalogScreen({ onBack }) {
         <div style={{ width: 80 }} />
       </header>
 
-      <div className="manage-toolbar">
-        <div className="search-bar">
-          <input
-            type="search"
-            placeholder="Пошук товару…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="manage-filters">
-          <select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
-            <option value="">Всі категорії</option>
-            {categories.map(c => (
-              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
-            ))}
-          </select>
-          <select value={availFilter} onChange={e => setAvailFilter(e.target.value)}>
-            <option value="all">Всі товари</option>
-            <option value="in">В наявності</option>
-            <option value="out">Немає в наявності</option>
-            <option value="low">Пора замовляти (≤{LOW_STOCK_THRESHOLD} шт)</option>
-          </select>
-          {brands.length > 0 && (
-            <>
-              <select value={brandFilter} onChange={e => setBrandFilter(e.target.value)}>
-                <option value="">Всі бренди</option>
-                {brands.map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
-                <option value="default">Порядок за замовчуванням</option>
-                <option value="brand">Сортувати за брендом</option>
-              </select>
-            </>
-          )}
-        </div>
-        <button className="btn-ghost manage-toggle-add" onClick={() => setShowCategories(s => !s)}>
-          {showCategories ? '− Приховати категорії' : '📂 Категорії'}
+      <div className="category-tabs">
+        <button
+          className={`tab${tab === 'products' ? ' active' : ''}`}
+          onClick={() => setTab('products')}
+        >
+          Товари
         </button>
-        <button className="btn-ghost manage-toggle-add" onClick={() => setShowAddForm(s => !s)}>
-          {showAddForm ? '− Приховати форму' : '+ Додати товар'}
+        <button
+          className={`tab${tab === 'deliveries' ? ' active' : ''}`}
+          onClick={() => setTab('deliveries')}
+        >
+          Поставки
+        </button>
+        <button
+          className={`tab${tab === 'categories' ? ' active' : ''}`}
+          onClick={() => setTab('categories')}
+        >
+          Категорії
         </button>
       </div>
 
-      <div className="manage-body">
+      {tab === 'deliveries' && <DeliveriesScreen />}
 
-        {showCategories && (
+      {tab === 'categories' && (
+        <div className="manage-body manage-body-narrow">
           <div className="manage-add-form card">
             <form className="manage-form-row manage-form-row-split" onSubmit={handleAddCat}>
               <input
@@ -333,7 +313,54 @@ export default function ManageCatalogScreen({ onBack }) {
                 </ul>
               )}
           </div>
-        )}
+        </div>
+      )}
+
+      {tab === 'products' && (
+      <>
+      <div className="manage-toolbar">
+        <div className="search-bar">
+          <input
+            type="search"
+            placeholder="Пошук товару…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="manage-filters">
+          <select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+            <option value="">Всі категорії</option>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+            ))}
+          </select>
+          <select value={availFilter} onChange={e => setAvailFilter(e.target.value)}>
+            <option value="all">Всі товари</option>
+            <option value="in">В наявності</option>
+            <option value="out">Немає в наявності</option>
+            <option value="low">Пора замовляти (≤{LOW_STOCK_THRESHOLD} шт)</option>
+          </select>
+          {brands.length > 0 && (
+            <>
+              <select value={brandFilter} onChange={e => setBrandFilter(e.target.value)}>
+                <option value="">Всі бренди</option>
+                {brands.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                <option value="default">Порядок за замовчуванням</option>
+                <option value="brand">Сортувати за брендом</option>
+              </select>
+            </>
+          )}
+        </div>
+        <button className="btn-ghost manage-toggle-add" onClick={() => setShowAddForm(s => !s)}>
+          {showAddForm ? '− Приховати форму' : '+ Додати товар'}
+        </button>
+      </div>
+
+      <div className="manage-body">
 
         {showAddForm && (
           <form className="manage-add-form card" onSubmit={handleAdd}>
@@ -506,6 +533,8 @@ export default function ManageCatalogScreen({ onBack }) {
         )}
 
       </div>
+      </>
+      )}
     </div>
   )
 }

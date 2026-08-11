@@ -4,7 +4,7 @@ import { trySendReport, formatShiftOpenReport, formatShiftCloseReport, isSnapsho
 
 // Без відкритої зміни продаж недоступний: цей екран стоїть між запуском каси
 // і головним екраном. Журнал, облік, статистика і бекапи доступні й без зміни.
-export default function OpenShiftScreen({ config, onOpened, onConfigChange, onReceipts, onManage, onStats, onBackup, onDeliveries }) {
+export default function OpenShiftScreen({ config, onOpened, onConfigChange, onReceipts, onManage, onSettings }) {
   const [error, setError] = useState(null)
   const [opening, setOpening] = useState(false)
   const [confirmingCashier, setConfirmingCashier] = useState(null)
@@ -108,8 +108,8 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
             ⚠️ Хмарні снапшоти й Telegram-звіти не налаштовані на цьому
             пристрої — повідомлення про відкриття/закриття змін не
             надсилатимуться.{' '}
-            <button className="cloud-warn-link" onClick={onBackup}>
-              Налаштувати в «Бекапах»
+            <button className="cloud-warn-link" onClick={onSettings}>
+              Налаштувати в «Налаштуваннях»
             </button>
           </div>
         )}
@@ -183,10 +183,8 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
 
         <div className="shift-screen-links">
           <button className="btn-ghost-sm" onClick={onManage}>Облік товарів</button>
-          <button className="btn-ghost-sm" onClick={onDeliveries}>Поставки</button>
           <button className="btn-ghost-sm" onClick={onReceipts}>Журнал</button>
-          <button className="btn-ghost-sm" onClick={onStats}>Статистика</button>
-          <button className="btn-ghost-sm" onClick={onBackup}>Бекапи</button>
+          <button className="btn-ghost-sm" onClick={onSettings}>Налаштування</button>
         </div>
       </div>
     </div>

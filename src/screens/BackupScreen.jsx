@@ -11,7 +11,9 @@ function fmtDateTime(ts) {
   return new Date(ts).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export default function BackupScreen({ onBack }) {
+// Без власного заголовка — вбудовується як вкладка «Бекапи»
+// всередині SettingsScreen.jsx.
+export default function BackupScreen() {
   const [backupError, setBackupError] = useState(null)
   const [pendingRestore, setPendingRestore] = useState(null)
   const [restoring, setRestoring] = useState(false)
@@ -156,15 +158,7 @@ export default function BackupScreen({ onBack }) {
   }
 
   return (
-    <div className="manage-layout">
-
-      <header className="app-header">
-        <button className="btn-ghost" onClick={onBack}>← Назад</button>
-        <h1>ГЕРКУЛЕС ШОП · Бекапи</h1>
-        <div style={{ width: 80 }} />
-      </header>
-
-      <div className="manage-body manage-body-narrow">
+    <div className="manage-body manage-body-narrow">
 
         <div className="card manage-backup">
           <p className="backup-hint">
@@ -347,7 +341,6 @@ export default function BackupScreen({ onBack }) {
           )}
         </div>
 
-      </div>
     </div>
   )
 }

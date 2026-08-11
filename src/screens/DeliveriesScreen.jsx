@@ -29,7 +29,9 @@ function groupByDay(deliveries) {
   return groups
 }
 
-export default function DeliveriesScreen({ onBack }) {
+// Без власного заголовка — вбудовується як вкладка «Поставки»
+// всередині ManageCatalogScreen (див. ManageCatalogScreen.jsx).
+export default function DeliveriesScreen() {
   const [mode, setMode] = useState('receive') // 'receive' | 'journal'
   const [products, setProducts] = useState([])
   const [search, setSearch] = useState('')
@@ -135,14 +137,7 @@ export default function DeliveriesScreen({ onBack }) {
   }
 
   return (
-    <div className="manage-layout">
-
-      <header className="app-header">
-        <button className="btn-ghost" onClick={onBack}>← Назад</button>
-        <h1>ГЕРКУЛЕС ШОП · Поставки</h1>
-        <div style={{ width: 80 }} />
-      </header>
-
+    <>
       <div className="category-tabs" style={{ padding: '10px 16px 0' }}>
         <button
           className={`tab${mode === 'receive' ? ' active' : ''}`}
@@ -332,6 +327,6 @@ export default function DeliveriesScreen({ onBack }) {
         </div>
       )}
 
-    </div>
+    </>
   )
 }

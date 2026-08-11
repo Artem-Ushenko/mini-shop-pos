@@ -8,7 +8,9 @@ function fmt(n) {
   return Math.round(n).toLocaleString('uk-UA')
 }
 
-export default function StatsScreen({ onBack }) {
+// Без власного заголовка — вбудовується як вкладка «Статистика»
+// всередині SettingsScreen.jsx.
+export default function StatsScreen() {
   const [stats, setStats] = useState(null)
 
   async function loadToday() {
@@ -32,15 +34,7 @@ export default function StatsScreen({ onBack }) {
   if (!stats?.today || !stats?.stock) return <div className="loading-screen">Завантаження…</div>
 
   return (
-    <div className="stats-layout">
-
-      <header className="app-header">
-        <button className="btn-ghost" onClick={onBack}>← Назад</button>
-        <h1>ГЕРКУЛЕС ШОП · Статистика</h1>
-        <div style={{ width: 80 }} />
-      </header>
-
-      <div className="stats-body">
+    <div className="stats-body">
 
         <section>
           <h2 className="stats-section-title">Сьогодні</h2>
@@ -138,7 +132,6 @@ export default function StatsScreen({ onBack }) {
           }
         </section>
 
-      </div>
     </div>
   )
 }
