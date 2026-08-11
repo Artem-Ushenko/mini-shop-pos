@@ -28,17 +28,14 @@ function isToday(ts) {
 // при кожному запуску каси, без ручного імпорту.
 const CATALOG_URL = '/catalog.csv'
 
-// У бандл потрапляє лише SHA-256-хеш пароля (.env → VITE_APP_PASSWORD_SHA256):
-// публічно розгорнутий JS читається будь-ким, відкритий текст там — дірка.
-// Локальна розробка без .env пароль не питає.
-const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD_SHA256
-const UNLOCK_KEY = 'kasa-unlocked'
-
-// Хеш пароля адміністратора (.env → VITE_ADMIN_PASSWORD_SHA256): без нього
-// касир не потрапить в «Облік товарів» чи «Налаштування» (статистика+бекапи).
-// Питається щоразу — розблокування не запам'ятовується, бо каса лишається
-// відкритою на пристрої всю зміну.
+// Єдиний пароль каси (.env → VITE_ADMIN_PASSWORD_SHA256) — питається один
+// раз при вході на пристрій, далі розблокування діє на весь застосунок,
+// включно з «Обліком товарів» і «Налаштуваннями» (без повторного запиту).
+// У бандл потрапляє лише SHA-256-хеш: публічно розгорнутий JS читається
+// будь-ким, відкритий текст пароля там — дірка. Локальна розробка без
+// .env пароль не питає.
 const ADMIN_PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_SHA256
+const UNLOCK_KEY = 'kasa-unlocked'
 
 // Дані каси (IndexedDB) прив'язані до адреси. Каса, відкрита за будь-якою
 // іншою адресою (порт 5174, 127.0.0.1, IP по мережі), бачить ІНШЕ, порожнє
@@ -62,11 +59,10 @@ export default function App() {
   const [config, setConfigState] = useState(null)
   const [shift, setShift] = useState(null)
   const [autoClosedShift, setAutoClosedShift] = useState(null)
-  const [adminUnlocked, setAdminUnlocked] = useState(false)
   const [saleToast, setSaleToast] = useState(null)
   // Запам'ятовується сам хеш: зміна пароля в .env інвалідує старі розблокування.
   const [unlocked, setUnlocked] = useState(
-    !APP_PASSWORD_HASH || localStorage.getItem(UNLOCK_KEY) === APP_PASSWORD_HASH
+    !ADMIN_PASSWORD_HASH || localStorage.getItem(UNLOCK_KEY) === ADMIN_PASSWORD_HASH
   )
 
   useEffect(() => {
@@ -122,8 +118,8 @@ export default function App() {
       <>
         {wrongAddressBanner}
         <PasswordGate
-          correctHash={APP_PASSWORD_HASH}
-          onUnlock={() => { localStorage.setItem(UNLOCK_KEY, APP_PASSWORD_HASH); setUnlocked(true) }}
+          correctHash={ADMIN_PASSWORD_HASH}
+          onUnlock={() => { localStorage.setItem(UNLOCK_KEY, ADMIN_PASSWORD_HASH); setUnlocked(true) }}
         />
       </>
     )
@@ -186,31 +182,11 @@ export default function App() {
           onEditReceipt={activeShift ? handleEditReceipt : undefined}
         />
       )}
-      {screen === 'manage' && ADMIN_PASSWORD_HASH && !adminUnlocked && (
-        <PasswordGate
-          correctHash={ADMIN_PASSWORD_HASH}
-          hint="Облік товарів доступний лише адміністратору"
-          onUnlock={() => setAdminUnlocked(true)}
-          onBack={() => setScreen('cashier')}
-        />
+      {screen === 'manage' && (
+        <ManageCatalogScreen onBack={() => setScreen('cashier')} />
       )}
-      {screen === 'manage' && (!ADMIN_PASSWORD_HASH || adminUnlocked) && (
-        <ManageCatalogScreen
-          onBack={() => { setAdminUnlocked(false); setScreen('cashier') }}
-        />
-      )}
-      {screen === 'settings' && ADMIN_PASSWORD_HASH && !adminUnlocked && (
-        <PasswordGate
-          correctHash={ADMIN_PASSWORD_HASH}
-          hint="Налаштування доступні лише адміністратору"
-          onUnlock={() => setAdminUnlocked(true)}
-          onBack={() => setScreen('cashier')}
-        />
-      )}
-      {screen === 'settings' && (!ADMIN_PASSWORD_HASH || adminUnlocked) && (
-        <SettingsScreen
-          onBack={() => { setAdminUnlocked(false); setScreen('cashier') }}
-        />
+      {screen === 'settings' && (
+        <SettingsScreen onBack={() => setScreen('cashier')} />
       )}
       {screen === 'cashier' && !activeShift && (
         <OpenShiftScreen
