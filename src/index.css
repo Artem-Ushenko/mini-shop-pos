@@ -170,6 +170,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .cashier-add-form input:focus { border-color: var(--c-primary); }
 
 .cashier-pick-list { display: flex; flex-direction: column; gap: 10px; }
+.cashier-pick-row { display: flex; gap: 6px; }
+.cashier-pick-row .cashier-pick-btn { flex: 1; }
 .cashier-pick-btn {
   min-height: 60px; font-size: 1.15rem; font-weight: 600;
   border: 2px solid var(--c-border); border-radius: var(--radius);
@@ -179,6 +181,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-color: var(--c-primary); background: #eff6ff; color: var(--c-primary);
 }
 .cashier-pick-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cashier-row-icon-btn {
+  flex-shrink: 0; min-width: 48px;
+  border: 2px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-card); font-size: 1.05rem;
+}
+.cashier-row-icon-btn:hover { border-color: var(--c-primary); background: #eff6ff; }
+.cashier-row-icon-btn.danger:hover { border-color: var(--c-danger); background: #fee2e2; }
 
 .shift-screen-links {
   display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;

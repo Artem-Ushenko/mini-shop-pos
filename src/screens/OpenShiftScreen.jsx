@@ -10,6 +10,9 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
   const [confirmingCashier, setConfirmingCashier] = useState(null)
   const [showAddCashier, setShowAddCashier] = useState(false)
   const [newName, setNewName] = useState('')
+  const [editingCashier, setEditingCashier] = useState(null)
+  const [editCashierName, setEditCashierName] = useState('')
+  const [confirmingDeleteCashier, setConfirmingDeleteCashier] = useState(null)
   const [openingCash, setOpeningCash] = useState('')
   const [cloudOff, setCloudOff] = useState(false)
   const [editingLoc, setEditingLoc] = useState(false)
@@ -76,6 +79,40 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
     }
   }
 
+  async function handleRenameCashier(oldName) {
+    const trimmed = editCashierName.trim()
+    if (!trimmed) return
+    if (trimmed !== oldName && config.cashiers.includes(trimmed)) {
+      setError('Такий касир вже є')
+      return
+    }
+    setError(null)
+    try {
+      const updated = await setConfig({
+        ...config,
+        cashiers: config.cashiers.map(x => x === oldName ? trimmed : x),
+      })
+      onConfigChange(updated)
+      setEditingCashier(null)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  async function handleDeleteCashier(name) {
+    setError(null)
+    try {
+      const updated = await setConfig({
+        ...config,
+        cashiers: config.cashiers.filter(x => x !== name),
+      })
+      onConfigChange(updated)
+      setConfirmingDeleteCashier(null)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
   return (
     <div className="gate-screen">
       <div className="card gate-card gate-card-wide">
@@ -130,14 +167,54 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
         <h2 className="setup-subtitle">Хто відкриває зміну?</h2>
         <div className="cashier-pick-list">
           {config.cashiers.map(c => (
-            <button
-              key={c}
-              className="cashier-pick-btn"
-              disabled={opening}
-              onClick={() => setConfirmingCashier(c)}
-            >
-              👤 {c}
-            </button>
+            <div key={c} className="cashier-pick-row">
+              {editingCashier === c ? (
+                <div className="manage-edit-form">
+                  <div className="manage-form-row">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={editCashierName}
+                      onChange={e => setEditCashierName(e.target.value)}
+                    />
+                  </div>
+                  <div className="manage-edit-actions">
+                    <button className="btn-primary" disabled={!editCashierName.trim()} onClick={() => handleRenameCashier(c)}>
+                      Зберегти
+                    </button>
+                    <button className="btn-ghost-sm" onClick={() => setEditingCashier(null)}>Скасувати</button>
+                  </div>
+                </div>
+              ) : confirmingDeleteCashier === c ? (
+                <div className="cancel-confirm">
+                  <span>Видалити «{c}»?</span>
+                  <button className="btn-danger" style={{ minHeight: 36, padding: '6px 14px' }} onClick={() => handleDeleteCashier(c)}>
+                    Так
+                  </button>
+                  <button className="btn-ghost-sm" onClick={() => setConfirmingDeleteCashier(null)}>Ні</button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="cashier-pick-btn"
+                    disabled={opening}
+                    onClick={() => setConfirmingCashier(c)}
+                  >
+                    👤 {c}
+                  </button>
+                  <button
+                    className="cashier-row-icon-btn"
+                    title="Перейменувати"
+                    onClick={() => { setEditingCashier(c); setEditCashierName(c) }}
+                  >✏️</button>
+                  <button
+                    className="cashier-row-icon-btn danger"
+                    title="Видалити"
+                    onClick={() => setConfirmingDeleteCashier(c)}
+                  >✕</button>
+                </>
+              )}
+            </div>
           ))}
         </div>
 
