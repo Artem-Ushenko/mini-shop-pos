@@ -31,12 +31,6 @@ REM -----------------------------------------------------------
 set "APP_DIR=%~dp0"
 set "SHOP_URL=http://localhost:%PORT%/"
 
-REM Позиція вікна — на весь перший монітор. Розмір не фіксуємо пікселями
-REM (--start-maximized нижче): на іншому дозволі екрана фіксовані WIN_W/WIN_H
-REM лишали б поля або обрізали вікно.
-set "WIN_X=0"
-set "WIN_Y=0"
-
 echo.
 echo   ГЕРКУЛЕС ШОП — підготовка робочого місця
 echo   ------------------------------------------
@@ -72,10 +66,12 @@ timeout /t 2 >nul
 
 REM ── 2. Каса «Геркулес Шоп» ──────────────────────────────────
 echo   [2/2] Запуск каси...
+REM --window-position разом з --start-maximized конфліктують — Chrome
+REM відкриває звичайне (не розгорнуте) вікно. Без позиції --start-maximized
+REM відкриває вікно на весь робочий екран основного монітора самостійно.
 start "Shop" /ABOVENORMAL "%CHROME%" ^
   --user-data-dir="%PROFILES%\shop" ^
   --app="%SHOP_URL%" ^
-  --window-position=%WIN_X%,%WIN_Y% ^
   --start-maximized ^
   --disable-background-timer-throttling ^
   --disable-backgrounding-occluded-windows ^
