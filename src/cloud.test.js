@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
-  formatShiftOpenReport,
   formatShiftCloseReport,
   trySendSnapshot,
   trySendReport,
@@ -62,28 +61,16 @@ beforeEach(() => {
   })
 })
 
-describe('formatShiftOpenReport', () => {
-  it('містить точку, касира, час і розмінну', () => {
-    const text = formatShiftOpenReport({ loc: 'Магазин', cashier: 'Оксана', openedAt, openingCash: 500 })
-    expect(text).toContain('🟢')
-    expect(text).toContain('<b>Магазин</b>')
-    expect(text).toContain('09:05')
-    expect(text).toContain('Оксана')
-    expect(text).toContain('500 ₴')
-  })
-
-  it('екранує HTML у назві точки і касирі', () => {
-    const text = formatShiftOpenReport({ loc: 'A<b>&', cashier: '<i>', openedAt, openingCash: 0 })
-    expect(text).toContain('A&lt;b&gt;&amp;')
-    expect(text).toContain('&lt;i&gt;')
-    expect(text).not.toContain('<i>')
-  })
-})
-
 describe('formatShiftCloseReport', () => {
-  it('звичайне закриття: ✅, виторг, готівка зійшлася', () => {
+  it('починається з чіткої мітки магазину, відокремленої від решти звіту', () => {
+    const text = formatShiftCloseReport(closedShift)
+    expect(text.startsWith('🏪 <b>ГЕРКУЛЕС ШОП</b>\n')).toBe(true)
+  })
+
+  it('звичайне закриття: ✅, час відкриття, виторг, готівка зійшлася', () => {
     const text = formatShiftCloseReport(closedShift)
     expect(text).toContain('✅')
+    expect(text).toContain('09:05')
     expect(text).toContain('21:30')
     expect(text).toContain('Чеків: 5')
     expect(text).toContain('950 ₴')

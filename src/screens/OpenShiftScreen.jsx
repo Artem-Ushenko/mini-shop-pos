@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { openShift, setConfig } from '../db.js'
-import { trySendReport, formatShiftOpenReport, formatShiftCloseReport, isSnapshotConfigured } from '../cloud.js'
+import { trySendReport, formatShiftCloseReport, isSnapshotConfigured } from '../cloud.js'
 
 // Без відкритої зміни продаж недоступний: цей екран стоїть між запуском каси
 // і головним екраном. Журнал, облік, статистика і бекапи доступні й без зміни.
@@ -29,12 +29,10 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
     setError(null)
     try {
       const { shift, autoClosed } = await openShift(cashier, Number(openingCash) || 0)
-      // Telegram-звіти у фоні, послідовно (щоб 🔴 автозакриття прийшло перед 🟢):
-      // каса не чекає хмару, невдача ставить звіт у чергу на повтор.
-      ;(async () => {
-        if (autoClosed) await trySendReport(formatShiftCloseReport(autoClosed))
-        await trySendReport(formatShiftOpenReport(shift))
-      })()
+      // Звіти шлються лише по закінченню зміни: якщо попередня зміна щойно
+      // закрилась автоматично (забули закрити вручну) — це і є той момент.
+      // Каса не чекає хмару, невдача ставить звіт у чергу на повтор.
+      if (autoClosed) trySendReport(formatShiftCloseReport(autoClosed))
       onOpened(shift, autoClosed)
     } catch (e) {
       setError(e.message)
@@ -143,8 +141,7 @@ export default function OpenShiftScreen({ config, onOpened, onConfigChange, onRe
         {cloudOff && (
           <div className="cloud-warn">
             ⚠️ Хмарні снапшоти й Telegram-звіти не налаштовані на цьому
-            пристрої — повідомлення про відкриття/закриття змін не
-            надсилатимуться.{' '}
+            пристрої — повідомлення про закриття змін не надсилатимуться.{' '}
             <button className="cloud-warn-link" onClick={onSettings}>
               Налаштувати в «Налаштуваннях»
             </button>

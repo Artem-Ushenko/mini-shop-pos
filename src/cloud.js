@@ -29,14 +29,16 @@ function money(n) {
   return `${Math.round(Number(n) || 0).toLocaleString('uk-UA')} ₴`
 }
 
-export function formatShiftOpenReport(shift) {
-  return `🟢 <b>${esc(shift.loc)}</b> — зміну відкрито о ${fmtTime(shift.openedAt)}\n` +
-    `👤 ${esc(shift.cashier)} · розмінна ${money(shift.openingCash)}`
-}
+// Звіт шлється лише по закінченню зміни (не по відкриттю) — один звіт містить
+// і момент відкриття, і підсумок закриття. Заголовок з назвою мережі
+// відокремлює його від звітів сусіднього проєкту «Клуб», що йдуть у той самий
+// Telegram-чат власника.
+const STORE_LABEL = '🏪 <b>ГЕРКУЛЕС ШОП</b>'
 
 export function formatShiftCloseReport(shift) {
   const bySystem = shift.closedBy === 'system'
   const lines = [
+    STORE_LABEL,
     `${bySystem ? '🔴' : '✅'} <b>${esc(shift.loc)}</b> — зміну закрито о ${fmtTime(shift.closedAt)}` +
       (bySystem ? ' <b>автоматично системою</b> (не закрили вручну)' : ''),
     `👤 ${esc(shift.cashier)} · відкрито о ${fmtTime(shift.openedAt)}`,
@@ -123,7 +125,8 @@ export async function trySendSnapshot(reportText) {
   }
 }
 
-// Звіт без снапшота (відкриття зміни). Невдача → у чергу на повтор.
+// Звіт без снапшота (закриття попередньої зміни системою при відкритті нової,
+// коли свіжий снапшот піде окремо разом зі звітом нової зміни). Невдача → у чергу.
 export async function trySendReport(reportText) {
   try {
     const data = await postToProxy({ report: reportText })
