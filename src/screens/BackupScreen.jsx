@@ -134,9 +134,6 @@ export default function BackupScreen() {
     setResetting(true)
     try {
       await resetDatabase()
-      // Нова точка на цьому пристрої має почати з чистого входу —
-      // старе розблокування паролем (App.jsx, UNLOCK_KEY) не переживає скид.
-      localStorage.removeItem('kasa-unlocked')
       window.location.reload()
     } catch (err) {
       setResetError(err.message)

@@ -28,14 +28,14 @@ function isToday(ts) {
 // при кожному запуску каси, без ручного імпорту.
 const CATALOG_URL = '/catalog.csv'
 
-// Єдиний пароль каси (.env → VITE_ADMIN_PASSWORD_SHA256) — питається один
-// раз при вході на пристрій, далі розблокування діє на весь застосунок,
-// включно з «Обліком товарів» і «Налаштуваннями» (без повторного запиту).
+// Пароль каси (.env → VITE_ADMIN_PASSWORD_SHA256) захищає лише чутливі
+// екрани — «Облік товарів» і «Налаштування». Вхід у саму касу (продаж,
+// зміни, чеки) пароля не потребує. Пароль питається щоразу при переході
+// в чутливий екран — розблокування не запам'ятовується.
 // У бандл потрапляє лише SHA-256-хеш: публічно розгорнутий JS читається
 // будь-ким, відкритий текст пароля там — дірка. Локальна розробка без
 // .env пароль не питає.
 const ADMIN_PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_SHA256
-const UNLOCK_KEY = 'kasa-unlocked'
 
 // Дані каси (IndexedDB) прив'язані до адреси. Каса, відкрита за будь-якою
 // іншою адресою (порт 5174, 127.0.0.1, IP по мережі), бачить ІНШЕ, порожнє
@@ -60,10 +60,8 @@ export default function App() {
   const [shift, setShift] = useState(null)
   const [autoClosedShift, setAutoClosedShift] = useState(null)
   const [saleToast, setSaleToast] = useState(null)
-  // Запам'ятовується сам хеш: зміна пароля в .env інвалідує старі розблокування.
-  const [unlocked, setUnlocked] = useState(
-    !ADMIN_PASSWORD_HASH || localStorage.getItem(UNLOCK_KEY) === ADMIN_PASSWORD_HASH
-  )
+  // Екран, вхід у який зараз перевіряється паролем ('manage' | 'settings' | null).
+  const [gateTarget, setGateTarget] = useState(null)
 
   useEffect(() => {
     async function boot() {
@@ -113,18 +111,6 @@ export default function App() {
     setScreen('cashier')
   }
 
-  if (!unlocked) {
-    return (
-      <>
-        {wrongAddressBanner}
-        <PasswordGate
-          correctHash={ADMIN_PASSWORD_HASH}
-          onUnlock={() => { localStorage.setItem(UNLOCK_KEY, ADMIN_PASSWORD_HASH); setUnlocked(true) }}
-        />
-      </>
-    )
-  }
-
   if (dbError)  return <div className="loading-screen err">Помилка бази: {dbError}</div>
   if (!dbReady) return <div className="loading-screen">Завантаження…</div>
 
@@ -132,15 +118,36 @@ export default function App() {
   // Перевірка на locationName також переналаштовує конфіг старого формату.
   if (!config?.locationName) return <>{wrongAddressBanner}<SetupScreen onDone={setConfigState} /></>
 
+  // «Облік товарів» і «Налаштування» — чутливі екрани: перехід у них питає
+  // пароль щоразу заново (без запам'ятовування розблокування).
+  function enterProtected(target) {
+    if (ADMIN_PASSWORD_HASH) setGateTarget(target)
+    else setScreen(target)
+  }
+
   const goTo = {
     onReceipts: () => setScreen('receipts'),
-    onManage: () => setScreen('manage'),
-    onSettings: () => setScreen('settings'),
+    onManage: () => enterProtected('manage'),
+    onSettings: () => enterProtected('settings'),
   }
 
   // Забута вчорашня зміна не продовжується мовчки: каса показує екран
   // відкриття, а openShift() закриє стару від імені системи (сценарій 7.2).
   const activeShift = shift && isToday(shift.openedAt) ? shift : null
+
+  if (gateTarget) {
+    return (
+      <>
+        {wrongAddressBanner}
+        <PasswordGate
+          correctHash={ADMIN_PASSWORD_HASH}
+          hint="Введіть пароль адміністратора"
+          onUnlock={() => { setScreen(gateTarget); setGateTarget(null) }}
+          onBack={() => setGateTarget(null)}
+        />
+      </>
+    )
+  }
 
   return (
     <>
