@@ -391,13 +391,16 @@ export async function deleteProduct(id) {
 // receipt.no — внутрішній автоінкрементний ключ (стабільний і унікальний
 // назавжди), receipt.shiftNo — людський номер за зміну («М-1», «З-7»),
 // який щозміни починається з 1, тому ключем бути не може.
-// opts.paymentMethod — з PAYMENT_METHODS (дефолт «готівка»).
+// opts.paymentMethod — з PAYMENT_METHODS (дефолт «готівка»); або opts.cashAmount +
+// opts.cardAmount — оплата двома способами одночасно (частина готівкою, частина
+// карткою), сума яких має точно дорівнювати total чека.
 // opts.allowOversell — дозволити продаж у мінус (залишок стане від'ємним):
 // касир уже підтвердив у UI, що товар фізично є, а облік відстає.
 // Без прапорця нестача залишку — помилка з code: 'INSUFFICIENT_STOCK'.
 export async function createReceipt(items, discount = 0, opts = {}) {
-  const { paymentMethod = 'готівка', allowOversell = false } = opts
-  if (!PAYMENT_METHODS.includes(paymentMethod)) {
+  const { paymentMethod = 'готівка', allowOversell = false, cashAmount, cardAmount } = opts
+  const split = cashAmount != null || cardAmount != null
+  if (!split && !PAYMENT_METHODS.includes(paymentMethod)) {
     throw new Error(`Невірний спосіб оплати: ${PAYMENT_METHODS.map(m => `«${m}»`).join(' або ')}`)
   }
 
@@ -429,10 +432,23 @@ export async function createReceipt(items, discount = 0, opts = {}) {
 
   const { subtotal, total } = calcReceiptTotals(items, discount)
 
+  let cash, card
+  if (split) {
+    cash = Math.round(Number(cashAmount) || 0)
+    card = Math.round(Number(cardAmount) || 0)
+    if (cash < 0 || card < 0) throw new Error('Суми оплати не можуть бути від\'ємними')
+    if (cash + card !== total) {
+      throw new Error(`Сума оплати (${cash + card} ₴) не збігається з сумою чека (${total} ₴)`)
+    }
+  } else {
+    cash = paymentMethod === 'картка' ? 0 : total
+    card = paymentMethod === 'картка' ? total : 0
+  }
+
   shift.receiptCount += 1
   shift.total += total
-  if (paymentMethod === 'картка') shift.cardTotal = (shift.cardTotal ?? 0) + total
-  else shift.cashTotal = (shift.cashTotal ?? 0) + total
+  shift.cashTotal = (shift.cashTotal ?? 0) + cash
+  shift.cardTotal = (shift.cardTotal ?? 0) + card
   await shiftStore.put(shift)
 
   const receipt = {
@@ -446,7 +462,11 @@ export async function createReceipt(items, discount = 0, opts = {}) {
     subtotal,
     discount,
     total,
-    paymentMethod,
+    // paymentMethod лишається для сумісності зі старими чеками/фільтрами —
+    // «змішана», коли чек оплачено двома способами одночасно (cashAmount/cardAmount).
+    paymentMethod: cash > 0 && card > 0 ? 'змішана' : (card > 0 ? 'картка' : 'готівка'),
+    cashAmount: cash,
+    cardAmount: card,
     cancelled: false,
     cancelReason: null,
   }
@@ -494,11 +514,12 @@ export async function cancelReceipt(no, reason) {
       shift.stornoCount += 1
       shift.total -= receipt.total
       // Розбивка за способом оплати теж має відобразити повернення грошей.
-      if ((receipt.paymentMethod ?? 'готівка') === 'картка') {
-        shift.cardTotal = (shift.cardTotal ?? 0) - receipt.total
-      } else {
-        shift.cashTotal = (shift.cashTotal ?? 0) - receipt.total
-      }
+      // cashAmount/cardAmount — чеки з цієї функції й новіші; старі чеки без
+      // цих полів повертаються за paymentMethod (уся сума одним способом).
+      const cashPart = receipt.cashAmount ?? (receipt.paymentMethod === 'картка' ? 0 : receipt.total)
+      const cardPart = receipt.cardAmount ?? (receipt.paymentMethod === 'картка' ? receipt.total : 0)
+      shift.cashTotal = (shift.cashTotal ?? 0) - cashPart
+      shift.cardTotal = (shift.cardTotal ?? 0) - cardPart
       await shiftStore.put(shift)
     }
   }

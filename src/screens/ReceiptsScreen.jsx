@@ -116,7 +116,9 @@ export default function ReceiptsScreen({ onBack, onEditReceipt }) {
                       {r.cashier && <span className="receipt-cashier">👤 {r.cashier}</span>}
                       {r.paymentMethod && (
                         <span className="receipt-cashier">
-                          {r.paymentMethod === 'картка' ? '💳 картка' : '💵 готівка'}
+                          {r.paymentMethod === 'змішана'
+                            ? `💵 ${r.cashAmount.toLocaleString('uk-UA')} ₴ · 💳 ${r.cardAmount.toLocaleString('uk-UA')} ₴`
+                            : r.paymentMethod === 'картка' ? '💳 картка' : '💵 готівка'}
                         </span>
                       )}
                       {r.cancelled && (

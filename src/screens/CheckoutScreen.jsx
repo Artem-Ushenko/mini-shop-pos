@@ -7,6 +7,9 @@ export default function CheckoutScreen({ cart, onConfirm, onBack }) {
   const [discount, setDiscount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [splitMode, setSplitMode] = useState(false)
+  const [cashAmount, setCashAmount] = useState('')
+  const [cardAmount, setCardAmount] = useState('')
 
   // Та сама функція, що й у createReceipt — суми на екрані та в чеку
   // збігаються завжди (окреме округлення тут уже давало розбіжність в 1 ₴).
@@ -28,6 +31,32 @@ export default function CheckoutScreen({ cart, onConfirm, onBack }) {
     setError(null)
     try {
       const receipt = await createReceipt(cart, discount, { paymentMethod, allowOversell: true })
+      onConfirm(receipt)
+    } catch (e) {
+      setError(e.message)
+      setLoading(false)
+    }
+  }
+
+  function toggleSplitMode() {
+    setError(null)
+    if (!splitMode) { setCashAmount(String(total)); setCardAmount('0') }
+    setSplitMode(!splitMode)
+  }
+
+  const splitCash = Number(cashAmount) || 0
+  const splitCard = Number(cardAmount) || 0
+  const splitDelta = splitCash + splitCard - total
+
+  async function handleConfirmSplit() {
+    setLoading(true)
+    setError(null)
+    try {
+      const receipt = await createReceipt(cart, discount, {
+        cashAmount: splitCash,
+        cardAmount: splitCard,
+        allowOversell: true
+      })
       onConfirm(receipt)
     } catch (e) {
       setError(e.message)
@@ -105,22 +134,66 @@ export default function CheckoutScreen({ cart, onConfirm, onBack }) {
 
         {error && <p className="error-msg">{error}</p>}
 
-        <div className="payment-buttons">
-          <button
-            className="btn-success btn-lg"
-            onClick={() => handleConfirm('готівка')}
-            disabled={loading || cart.length === 0}
-          >
-            {loading ? 'Проводимо…' : `💵 Готівка · ${total.toLocaleString('uk-UA')} ₴`}
-          </button>
-          <button
-            className="btn-primary btn-lg"
-            onClick={() => handleConfirm('картка')}
-            disabled={loading || cart.length === 0}
-          >
-            {loading ? 'Проводимо…' : `💳 Картка · ${total.toLocaleString('uk-UA')} ₴`}
-          </button>
-        </div>
+        {!splitMode ? (
+          <div className="payment-buttons">
+            <button
+              className="btn-success btn-lg"
+              onClick={() => handleConfirm('готівка')}
+              disabled={loading || cart.length === 0}
+            >
+              {loading ? 'Проводимо…' : `💵 Готівка · ${total.toLocaleString('uk-UA')} ₴`}
+            </button>
+            <button
+              className="btn-primary btn-lg"
+              onClick={() => handleConfirm('картка')}
+              disabled={loading || cart.length === 0}
+            >
+              {loading ? 'Проводимо…' : `💳 Картка · ${total.toLocaleString('uk-UA')} ₴`}
+            </button>
+          </div>
+        ) : (
+          <section className="checkout-summary card">
+            <div className="cash-count-row">
+              <label htmlFor="split-cash">💵 Готівкою</label>
+              <input
+                id="split-cash"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={cashAmount}
+                onChange={e => setCashAmount(e.target.value)}
+              />
+            </div>
+            <div className="cash-count-row">
+              <label htmlFor="split-card">💳 Карткою</label>
+              <input
+                id="split-card"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={cardAmount}
+                onChange={e => setCardAmount(e.target.value)}
+              />
+            </div>
+            <p className={`cash-delta ${splitDelta === 0 ? 'ok' : 'bad'}`} style={{ textAlign: 'right' }}>
+              {splitDelta === 0
+                ? '✓ Сходиться з сумою чека'
+                : `Δ ${splitDelta > 0 ? '+' : ''}${splitDelta.toLocaleString('uk-UA')} ₴ до суми чека`}
+            </p>
+            <button
+              className="btn-primary btn-lg"
+              style={{ width: '100%' }}
+              onClick={handleConfirmSplit}
+              disabled={loading || cart.length === 0 || splitDelta !== 0}
+            >
+              {loading ? 'Проводимо…' : `Провести · ${total.toLocaleString('uk-UA')} ₴`}
+            </button>
+          </section>
+        )}
+
+        <button className="btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={toggleSplitMode}>
+          {splitMode ? '← Один спосіб оплати' : 'Розділити оплату (готівка + картка)'}
+        </button>
 
       </div>
     </div>

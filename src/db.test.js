@@ -829,6 +829,38 @@ describe('спосіб оплати', () => {
   })
 })
 
+describe('розділена оплата (готівка + картка одним чеком)', () => {
+  it('пише суму в обидва підсумки зміни за заданою розбивкою', async () => {
+    const receipt = await createReceipt(
+      [{ id: 1, name: 'Еспресо', price: 250, qty: 1 }], 0,
+      { cashAmount: 200, cardAmount: 50 }
+    )
+    expect(receipt.paymentMethod).toBe('змішана')
+    expect(receipt.cashAmount).toBe(200)
+    expect(receipt.cardAmount).toBe(50)
+    const shift = await getCurrentShift()
+    expect(shift.cashTotal).toBe(200)
+    expect(shift.cardTotal).toBe(50)
+  })
+
+  it('відхиляє розбивку, що не збігається із сумою чека', async () => {
+    await expect(
+      createReceipt([{ id: 1, name: 'Еспресо', price: 250, qty: 1 }], 0, { cashAmount: 100, cardAmount: 50 })
+    ).rejects.toThrow('не збігається')
+  })
+
+  it('сторно повертає обидві частини розбивки', async () => {
+    const r = await createReceipt(
+      [{ id: 1, name: 'Еспресо', price: 250, qty: 1 }], 0,
+      { cashAmount: 200, cardAmount: 50 }
+    )
+    await cancelReceipt(r.no, 'повернення')
+    const shift = await getCurrentShift()
+    expect(shift.cashTotal).toBe(0)
+    expect(shift.cardTotal).toBe(0)
+  })
+})
+
 describe('касова дисципліна зміни', () => {
   it('openShift фіксує розмінну готівку', async () => {
     await closeShiftLocal()
