@@ -46,13 +46,13 @@ export function formatShiftCloseReport(shift) {
       (shift.stornoCount > 0 ? ` · ↩️ сторно: ${shift.stornoCount}` : ''),
     `💰 Виторг: <b>${money(shift.total)}</b> (готівка ${money(shift.cashTotal)} · картка ${money(shift.cardTotal)})`,
   ]
-  if (shift.countedCash != null) {
-    const delta = shift.countedCash - (shift.expectedCash ?? 0)
-    lines.push(delta === 0
-      ? `💵 Готівка в касі: ${money(shift.countedCash)} — ✓ зійшлося`
-      : `💵 Готівка в касі: ${money(shift.countedCash)}, мало бути ${money(shift.expectedCash)} — ⚠️ Δ ${delta > 0 ? '+' : ''}${money(delta)}`)
-  } else if (!bySystem) {
-    lines.push(`💵 Готівку не перераховано (мало бути ${money(shift.expectedCash)})`)
+  if (!bySystem) {
+    lines.push(`💵 Готівка на початку зміни: ${money(shift.openingCash ?? 0)}`)
+    lines.push(shift.countedCash != null
+      ? (shift.countedCash === shift.expectedCash
+        ? `💵 Готівка на кінець зміни: ${money(shift.countedCash)} — ✓ зійшлося`
+        : `💵 Готівка на кінець зміни: ${money(shift.countedCash)}, мало бути ${money(shift.expectedCash)} — ⚠️ Δ ${shift.countedCash - shift.expectedCash > 0 ? '+' : ''}${money(shift.countedCash - shift.expectedCash)}`)
+      : `💵 Готівку на кінець зміни не перераховано (мало бути ${money(shift.expectedCash)})`)
   }
   return lines.join('\n')
 }
