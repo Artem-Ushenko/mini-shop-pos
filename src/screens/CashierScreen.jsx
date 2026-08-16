@@ -234,7 +234,10 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
                       className={`product-row${outOfStock ? ' disabled' : ''}${qty > 0 ? ' in-cart' : ''}`}
                       onClick={() => addToCart(product)}
                     >
-                      <td className="product-name">{product.name}</td>
+                      <td className="product-name">
+                        {product.brand && <span className="brand-tag">{product.brand}</span>}
+                        {product.name}
+                      </td>
                       <td className="product-price">{product.price.toLocaleString('uk-UA')} ₴</td>
                       <td className="product-stock">
                         {outOfStock
