@@ -104,13 +104,6 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [saleToast])
 
-  // «Правка» чека з журналу: чек уже сторновано (причина «виправлення»),
-  // позиції переносяться в кошик для редагування і повторного проведення.
-  function handleEditReceipt(receipt) {
-    setCart(receipt.items.map(i => ({ ...i })))
-    setScreen('cashier')
-  }
-
   if (dbError)  return <div className="loading-screen err">Помилка бази: {dbError}</div>
   if (!dbReady) return <div className="loading-screen">Завантаження…</div>
 
@@ -184,10 +177,7 @@ export default function App() {
         />
       )}
       {screen === 'receipts' && (
-        <ReceiptsScreen
-          onBack={() => setScreen('cashier')}
-          onEditReceipt={activeShift ? handleEditReceipt : undefined}
-        />
+        <ReceiptsScreen onBack={() => setScreen('cashier')} />
       )}
       {screen === 'manage' && (
         <ManageCatalogScreen onBack={() => setScreen('cashier')} />

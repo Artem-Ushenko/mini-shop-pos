@@ -139,7 +139,7 @@ export default function CashierScreen({ cart, setCart, shift, onShiftClosed, onC
               <ul className="shift-summary">
                 <li><span>Касир</span><strong>{closingShift.cashier}</strong></li>
                 <li><span>Чеків</span><strong>{closingShift.receiptCount}</strong></li>
-                <li><span>Сторно</span><strong>{closingShift.stornoCount}</strong></li>
+                <li><span title="Кількість скасованих чеків за зміну">Скасовано</span><strong>{closingShift.stornoCount}</strong></li>
                 <li><span>Виторг</span><strong>{closingShift.total.toLocaleString('uk-UA')} ₴</strong></li>
                 <li><span>· готівкою</span><strong>{(closingShift.cashTotal ?? 0).toLocaleString('uk-UA')} ₴</strong></li>
                 <li><span>· карткою</span><strong>{(closingShift.cardTotal ?? 0).toLocaleString('uk-UA')} ₴</strong></li>

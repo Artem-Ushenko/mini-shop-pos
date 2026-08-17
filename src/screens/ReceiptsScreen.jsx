@@ -36,14 +36,13 @@ function groupByDay(receipts) {
   return groups
 }
 
-// onEditReceipt передається лише при відкритій зміні: «правка» чека — це
-// сторно з причиною «виправлення» + перенесення позицій у кошик, щоб касир
-// додав/прибрав потрібне і провів новий чек. Сам чек у журналі незмінний.
-export default function ReceiptsScreen({ onBack, onEditReceipt }) {
+// «Виправлення» — це просто одна з причин скасування (як «помилка» чи
+// «повернення»): чек скасовується з цією причиною, а новий пробивається
+// окремо, з нуля. Сам скасований чек у журналі незмінний.
+export default function ReceiptsScreen({ onBack }) {
   const [receipts, setReceipts] = useState([])
   const [dayTotal, setDayTotal] = useState({ sum: 0, count: 0 })
   const [confirmingNo, setConfirmingNo] = useState(null)
-  const [editingNo, setEditingNo] = useState(null)
   const [error, setError] = useState(null)
 
   async function load() {
@@ -63,17 +62,6 @@ export default function ReceiptsScreen({ onBack, onEditReceipt }) {
     } catch (e) {
       setError(e.message)
       setConfirmingNo(null)
-    }
-  }
-
-  async function handleEdit(receipt) {
-    setError(null)
-    try {
-      await cancelReceipt(receipt.no, 'виправлення')
-      onEditReceipt(receipt)
-    } catch (e) {
-      setError(e.message)
-      setEditingNo(null)
     }
   }
 
@@ -123,7 +111,7 @@ export default function ReceiptsScreen({ onBack, onEditReceipt }) {
                       )}
                       {r.cancelled && (
                         <span className="badge-cancelled">
-                          СТОРНО{r.cancelReason ? ` · ${r.cancelReason}` : ''}
+                          СКАСОВАНО{r.cancelReason ? ` · ${r.cancelReason}` : ''}
                         </span>
                       )}
                     </div>
@@ -142,47 +130,20 @@ export default function ReceiptsScreen({ onBack, onEditReceipt }) {
                       )}
                       <strong>{r.total.toLocaleString('uk-UA')} ₴</strong>
 
-                      {!r.cancelled && confirmingNo !== r.no && editingNo !== r.no && onEditReceipt && (
-                        <button
-                          className="btn-ghost-sm"
-                          onClick={() => { setConfirmingNo(null); setEditingNo(r.no) }}
-                        >
-                          ✏️ Виправити
-                        </button>
-                      )}
-
-                      {!r.cancelled && editingNo === r.no && (
-                        <div className="cancel-confirm">
-                          <span>
-                            Чек буде сторновано (виправлення), позиції перейдуть у кошик —
-                            відредагуйте і проведіть новий чек.
-                          </span>
-                          <button
-                            className="btn-primary"
-                            style={{ minHeight: 36, padding: '6px 14px' }}
-                            onClick={() => handleEdit(r)}
-                          >
-                            Виправити
-                          </button>
-                          <button className="btn-ghost-sm" onClick={() => setEditingNo(null)}>
-                            Скасувати
-                          </button>
-                        </div>
-                      )}
-
-                      {!r.cancelled && confirmingNo !== r.no && editingNo !== r.no && (
+                      {!r.cancelled && confirmingNo !== r.no && (
                         <button
                           className="btn-ghost-sm"
                           style={{ color: 'var(--c-danger)' }}
-                          onClick={() => { setEditingNo(null); setConfirmingNo(r.no) }}
+                          title="Чек залишиться в журналі з позначкою «Скасовано», а його сума не потрапить до виручки. Новий чек після цього пробивається окремо, з нуля."
+                          onClick={() => setConfirmingNo(r.no)}
                         >
-                          Сторно
+                          Скасувати чек
                         </button>
                       )}
 
                       {!r.cancelled && confirmingNo === r.no && (
                         <div className="cancel-confirm">
-                          <span>Причина сторно ({r.shiftNo ?? `№${r.no}`}):</span>
+                          <span>Причина скасування ({r.shiftNo ?? `№${r.no}`}):</span>
                           {CANCEL_REASONS.map(reason => (
                             <button
                               key={reason}

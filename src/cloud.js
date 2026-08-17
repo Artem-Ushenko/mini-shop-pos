@@ -43,7 +43,7 @@ export function formatShiftCloseReport(shift) {
       (bySystem ? ' <b>автоматично системою</b> (не закрили вручну)' : ''),
     `👤 ${esc(shift.cashier)} · відкрито о ${fmtTime(shift.openedAt)}`,
     `🧾 Чеків: ${shift.receiptCount}` +
-      (shift.stornoCount > 0 ? ` · ↩️ сторно: ${shift.stornoCount}` : ''),
+      (shift.stornoCount > 0 ? ` · ↩️ скасовано: ${shift.stornoCount}` : ''),
     `💰 Виторг: <b>${money(shift.total)}</b> (готівка ${money(shift.cashTotal)} · картка ${money(shift.cardTotal)})`,
   ]
   if (!bySystem) {

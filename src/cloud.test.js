@@ -77,7 +77,7 @@ describe('formatShiftCloseReport', () => {
     expect(text).toContain('готівка 650 ₴')
     expect(text).toContain('картка 300 ₴')
     expect(text).toContain('✓ зійшлося')
-    expect(text).not.toContain('сторно')
+    expect(text).not.toContain('скасовано')
   })
 
   it('недостача: показує Δ і очікувану суму', () => {
@@ -92,9 +92,9 @@ describe('formatShiftCloseReport', () => {
     expect(text).toContain('Δ +50 ₴')
   })
 
-  it('сторно згадується лише коли воно було', () => {
+  it('скасування згадується лише коли воно було', () => {
     const text = formatShiftCloseReport({ ...closedShift, stornoCount: 2 })
-    expect(text).toContain('↩️ сторно: 2')
+    expect(text).toContain('↩️ скасовано: 2')
   })
 
   it('готівку не перераховано — окремий рядок з очікуваною сумою', () => {

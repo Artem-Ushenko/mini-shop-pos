@@ -7,8 +7,7 @@ const DB_VERSION = 3
 // щоб ніколи не перетнутись з id з WooCommerce/Google Таблиці.
 const MANUAL_ID_START = 900_000
 
-// Дозволені причини сторно — чек без причини скасувати не можна.
-// «виправлення» — службова причина правки чека: сторно + перебиття новим чеком.
+// Дозволені причини скасування — чек без причини скасувати не можна.
 export const CANCEL_REASONS = ['помилка', 'повернення', 'виправлення']
 
 // Способи оплати чека. Старі чеки без paymentMethod рахуються готівкою.
@@ -477,10 +476,10 @@ export async function createReceipt(items, discount = 0, opts = {}) {
   return { ...receipt, no }
 }
 
-// Сторно вимагає причину — без неї чек не скасовується.
+// Скасування вимагає причину — без неї чек не скасовується.
 export async function cancelReceipt(no, reason) {
   if (!CANCEL_REASONS.includes(reason)) {
-    throw new Error(`Вкажіть причину сторно: ${CANCEL_REASONS.map(r => `«${r}»`).join(' або ')}`)
+    throw new Error(`Вкажіть причину скасування: ${CANCEL_REASONS.map(r => `«${r}»`).join(' або ')}`)
   }
 
   const tx = db().transaction(['products', 'receipts', 'shifts'], 'readwrite')
@@ -506,7 +505,7 @@ export async function cancelReceipt(no, reason) {
   receipt.cancelReason = reason
   await recStore.put(receipt)
 
-  // Підсумки зміни чека (навіть уже закритої) відображають сторно.
+  // Підсумки зміни чека (навіть уже закритої) відображають скасування.
   // Чеки до впровадження змін не мають shiftId — їх пропускаємо.
   if (receipt.shiftId) {
     const shift = await shiftStore.get(receipt.shiftId)

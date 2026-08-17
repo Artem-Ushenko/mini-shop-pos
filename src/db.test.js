@@ -566,7 +566,7 @@ describe('createReceipt зі змінами', () => {
     expect(r.cashier).toBe('Ігор')
   })
 
-  it('веде підсумки зміни: чеки, виторг, сторно', async () => {
+  it('веде підсумки зміни: чеки, виторг, скасування', async () => {
     await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }]) // 90
     const r2 = await createReceipt([{ id: 2, name: 'Американо', price: 50, qty: 1 }]) // 50
     await cancelReceipt(r2.no, 'повернення')
@@ -574,15 +574,15 @@ describe('createReceipt зі змінами', () => {
     const shift = await getCurrentShift()
     expect(shift.receiptCount).toBe(2)
     expect(shift.stornoCount).toBe(1)
-    expect(shift.total).toBe(90) // 140 − 50 сторно
+    expect(shift.total).toBe(90) // 140 − 50 скасовано
   })
 })
 
 describe('cancelReceipt з причиною', () => {
   it('вимагає причину зі списку дозволених', async () => {
     const r = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }])
-    await expect(cancelReceipt(r.no)).rejects.toThrow('причину сторно')
-    await expect(cancelReceipt(r.no, 'передумав')).rejects.toThrow('причину сторно')
+    await expect(cancelReceipt(r.no)).rejects.toThrow('причину скасування')
+    await expect(cancelReceipt(r.no, 'передумав')).rejects.toThrow('причину скасування')
     expect((await getProducts()).find(p => p.id === 1).stock).toBe(9) // stock не повернувся
   })
 
@@ -821,7 +821,7 @@ describe('спосіб оплати', () => {
     ).rejects.toThrow('спосіб оплати')
   })
 
-  it('сторно повертає суму в розбивку відповідного способу оплати', async () => {
+  it('скасування повертає суму в розбивку відповідного способу оплати', async () => {
     const r = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 1 }], 0, { paymentMethod: 'картка' })
     await cancelReceipt(r.no, 'повернення')
     const shift = await getCurrentShift()
@@ -849,7 +849,7 @@ describe('розділена оплата (готівка + картка одн�
     ).rejects.toThrow('не збігається')
   })
 
-  it('сторно повертає обидві частини розбивки', async () => {
+  it('скасування повертає обидві частини розбивки', async () => {
     const r = await createReceipt(
       [{ id: 1, name: 'Еспресо', price: 250, qty: 1 }], 0,
       { cashAmount: 200, cardAmount: 50 }
@@ -901,14 +901,14 @@ describe('продаж понад залишок (oversell)', () => {
     expect((await getProducts()).find(p => p.id === 2).stock).toBe(-2)
   })
 
-  it('сторно повертає залишок з мінуса', async () => {
+  it('скасування повертає залишок з мінуса', async () => {
     const r = await createReceipt([{ id: 2, name: 'Американо', price: 50, qty: 7 }], 0, { allowOversell: true })
     await cancelReceipt(r.no, 'помилка')
     expect((await getProducts()).find(p => p.id === 2).stock).toBe(5)
   })
 })
 
-describe('правка чека (сторно «виправлення»)', () => {
+describe('правка чека (скасування «виправлення»)', () => {
   it('приймає причину «виправлення» і повертає stock для перебиття', async () => {
     const r = await createReceipt([{ id: 1, name: 'Еспресо', price: 45, qty: 2 }])
     const cancelled = await cancelReceipt(r.no, 'виправлення')
