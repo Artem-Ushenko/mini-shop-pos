@@ -53,6 +53,29 @@ export async function initLocalBackup() {
   state.permissionOk = perm === 'granted'
   emit()
   if (state.permissionOk) startSchedule()
+  bindAutoReconfirm()
+}
+
+// Chrome скидає дозвіл readwrite на збережений FileSystemDirectoryHandle при
+// кожному новому запуску браузера — queryPermission() одразу після старту
+// повертає не 'granted', навіть якщо дозвіл уже надавали раніше.
+// requestPermission() у відповідь на той самий дозвіл зазвичай не показує
+// діалог повторно (Chrome тихо підтверджує вже наданий сайту дозвіл) — але
+// вимагає жесту користувача, тож ловимо перший клік будь-де в застосунку і,
+// поки дозволу нема, тихо перевіряємо — без походу в Налаштування.
+// Той самий прийом, що в Клубі (backup.js).
+let lastAutoReconfirmAt = 0
+let autoReconfirmBound = false
+function bindAutoReconfirm() {
+  if (autoReconfirmBound) return
+  autoReconfirmBound = true
+  document.addEventListener('click', async () => {
+    if (state.permissionOk || !dirHandle) return
+    const now = Date.now()
+    if (now - lastAutoReconfirmAt < 30000) return
+    lastAutoReconfirmAt = now
+    await reconfirmLocalBackupPermission()
+  })
 }
 
 // ── Вибір / перевидача папки (потребує жесту користувача — виклик з onclick) ──
