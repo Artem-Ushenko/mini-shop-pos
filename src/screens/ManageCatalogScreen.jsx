@@ -24,7 +24,7 @@ export default function ManageCatalogScreen({ onBack }) {
   const [form, setForm] = useState({ cat: '', name: '', price: '', cost: '', stock: '', brand: '' })
 
   const [editingId, setEditingId] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', price: '', cost: '', stock: '', brand: '' })
+  const [editForm, setEditForm] = useState({ cat: '', name: '', price: '', cost: '', stock: '', brand: '' })
   const [editError, setEditError] = useState(null)
 
   // «Поставки» — навмисно посередині (не перший, не останній пункт), щоб
@@ -123,7 +123,7 @@ export default function ManageCatalogScreen({ onBack }) {
 
   function startEdit(p) {
     setEditingId(p.id)
-    setEditForm({ name: p.name, price: String(p.price), cost: String(p.cost ?? 0), stock: String(p.stock), brand: p.brand ?? '' })
+    setEditForm({ cat: p.cat, name: p.name, price: String(p.price), cost: String(p.cost ?? 0), stock: String(p.stock), brand: p.brand ?? '' })
     setEditError(null)
   }
 
@@ -140,13 +140,14 @@ export default function ManageCatalogScreen({ onBack }) {
     const cost = editForm.cost === '' ? 0 : Number(editForm.cost)
     const stock = Number(editForm.stock)
 
+    if (!editForm.cat) return setEditError('Оберіть категорію')
     if (!name) return setEditError('Вкажіть назву товару')
     if (!price || price <= 0) return setEditError('Вкажіть коректну ціну')
     if (cost < 0 || !Number.isFinite(cost)) return setEditError('Вкажіть коректну собівартість')
     if (stock < 0 || !Number.isFinite(stock)) return setEditError('Вкажіть коректний залишок')
 
     try {
-      await updateProduct(id, { name, price, cost, stock, brand: editForm.brand })
+      await updateProduct(id, { name, price, cost, stock, brand: editForm.brand, cat: editForm.cat })
       setEditingId(null)
       await load()
     } catch (err) {
@@ -434,6 +435,16 @@ export default function ManageCatalogScreen({ onBack }) {
                 <li key={p.id} className="manage-item card">
                   {editingId === p.id ? (
                     <div className="manage-edit-form">
+                      <div className="manage-form-row">
+                        <select
+                          value={editForm.cat}
+                          onChange={e => setEditForm(f => ({ ...f, cat: e.target.value }))}
+                        >
+                          {categories.map(c => (
+                            <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="manage-form-row">
                         <input
                           type="text"

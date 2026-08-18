@@ -346,7 +346,7 @@ export async function createProduct({ cat, name, price, stock, cost = 0, brand =
 // Ручна зміна залишку (не через поставку і не через продаж) лишає слід
 // у журналі deliveries записом type: 'adjustment' з дельтою — інакше після неї
 // неможливо відповісти, звідки взявся чи зник товар.
-export async function updateProduct(id, { name, price, stock, cost = 0, brand }) {
+export async function updateProduct(id, { name, price, stock, cost = 0, brand, cat }) {
   const tx = db().transaction(['products', 'deliveries'], 'readwrite')
   const prodStore = tx.objectStore('products')
   const product = await prodStore.get(id)
@@ -359,9 +359,10 @@ export async function updateProduct(id, { name, price, stock, cost = 0, brand })
     price: Math.round(Number(price) || 0),
     cost: Math.round(Number(cost) || 0),
     stock: newStock,
-    // brand не передано викликом (напр. старий код/тест) — лишаємо як було,
-    // не стираємо мовчки.
+    // brand/cat не передано викликом (напр. старий код/тест) — лишаємо як
+    // було, не стираємо мовчки.
     brand: brand === undefined ? (product.brand ?? '') : (brand ?? '').trim(),
+    cat: cat === undefined ? product.cat : cat,
     updatedAt: now, priceUpdatedAt: now,
   }
   await prodStore.put(updated)
